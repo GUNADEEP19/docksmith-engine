@@ -1,0 +1,3 @@
+# Docksmith build recipe
+# Example placeholder instructions
+FROM scratch
