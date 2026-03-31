@@ -8,6 +8,11 @@ import (
 	"docksmith-engine/internal"
 )
 
+// readFile is overridable for tests.
+var readFile = func(filePath string) (string, error) {
+	return internal.ReadFile(filePath)
+}
+
 // Parser implements the internal.Parser interface for parsing Docksmithfile instructions.
 type Parser struct{}
 
@@ -34,7 +39,8 @@ func (p *Parser) Parse(filePath string) ([]internal.Instruction, error) {
 
 	for _, line := range lines {
 		lineNum++
-		// Trim whitespace
+		// Normalize CRLF line endings.
+		line = strings.TrimSuffix(line, "\r")
 		trimmed := strings.TrimSpace(line)
 
 		// Skip empty lines and comments
@@ -43,7 +49,7 @@ func (p *Parser) Parse(filePath string) ([]internal.Instruction, error) {
 		}
 
 		// Parse instruction
-		inst, err := parseInstruction(trimmed, lineNum)
+		inst, err := parseInstruction(line, trimmed, lineNum)
 		if err != nil {
 			return nil, err
 		}
@@ -59,8 +65,9 @@ func (p *Parser) Parse(filePath string) ([]internal.Instruction, error) {
 }
 
 // parseInstruction parses a single instruction line.
-func parseInstruction(line string, lineNum int) (internal.Instruction, error) {
-	parts := strings.Fields(line)
+// rawLine is preserved verbatim in Instruction.Raw.
+func parseInstruction(rawLine string, trimmedLine string, lineNum int) (internal.Instruction, error) {
+	parts := strings.Fields(trimmedLine)
 	if len(parts) == 0 {
 		return internal.Instruction{}, fmt.Errorf("line %d: empty instruction", lineNum)
 	}
@@ -75,7 +82,7 @@ func parseInstruction(line string, lineNum int) (internal.Instruction, error) {
 			return internal.Instruction{}, fmt.Errorf("line %d: FROM requires exactly one argument (image name)", lineNum)
 		}
 		return internal.Instruction{
-			Raw:  line,
+			Raw:  rawLine,
 			Op:   op,
 			Args: args,
 		}, nil
@@ -85,7 +92,7 @@ func parseInstruction(line string, lineNum int) (internal.Instruction, error) {
 			return internal.Instruction{}, fmt.Errorf("line %d: COPY requires at least source and destination", lineNum)
 		}
 		return internal.Instruction{
-			Raw:  line,
+			Raw:  rawLine,
 			Op:   op,
 			Args: args,
 		}, nil
@@ -95,7 +102,7 @@ func parseInstruction(line string, lineNum int) (internal.Instruction, error) {
 			return internal.Instruction{}, fmt.Errorf("line %d: RUN requires a command", lineNum)
 		}
 		return internal.Instruction{
-			Raw:  line,
+			Raw:  rawLine,
 			Op:   op,
 			Args: args,
 		}, nil
@@ -105,62 +112,48 @@ func parseInstruction(line string, lineNum int) (internal.Instruction, error) {
 			return internal.Instruction{}, fmt.Errorf("line %d: WORKDIR requires exactly one path argument", lineNum)
 		}
 		return internal.Instruction{
-			Raw:  line,
+			Raw:  rawLine,
 			Op:   op,
 			Args: args,
 		}, nil
 
 	case "ENV":
-		if len(args) < 1 {
-			return internal.Instruction{}, fmt.Errorf("line %d: ENV requires KEY=VALUE format", lineNum)
+		// Strict ENV format: exactly one token KEY=value
+		if len(args) != 1 {
+			return internal.Instruction{}, fmt.Errorf("line %d: invalid ENV format", lineNum)
 		}
-		// Rejoin all args in case ENV has spaces
-		envStr := strings.Join(args, " ")
-		if !strings.Contains(envStr, "=") {
-			return internal.Instruction{}, fmt.Errorf("line %d: ENV requires KEY=VALUE format, got: %s", lineNum, envStr)
+		k, v, ok := strings.Cut(args[0], "=")
+		if !ok || strings.TrimSpace(k) == "" {
+			return internal.Instruction{}, fmt.Errorf("line %d: invalid ENV format", lineNum)
 		}
-		parts := strings.SplitN(envStr, "=", 2)
-		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
-			return internal.Instruction{}, fmt.Errorf("line %d: ENV invalid format: %s", lineNum, envStr)
-		}
+		_ = v
 		return internal.Instruction{
-			Raw:  line,
+			Raw:  rawLine,
 			Op:   op,
-			Args: []string{strings.TrimSpace(parts[0]), parts[1]},
+			Args: []string{args[0]},
 		}, nil
 
 	case "CMD":
 		// CMD must be a JSON array
 		if len(args) == 0 {
-			return internal.Instruction{}, fmt.Errorf("line %d: CMD requires JSON array format, e.g., CMD [\"cmd\",\"arg\"]", lineNum)
+			return internal.Instruction{}, fmt.Errorf("line %d: CMD must be JSON array", lineNum)
 		}
-		// Rejoin all args (JSON array might have spaces)
 		cmdStr := strings.Join(args, " ")
-		if !strings.HasPrefix(cmdStr, "[") || !strings.HasSuffix(cmdStr, "]") {
-			return internal.Instruction{}, fmt.Errorf("line %d: CMD must be a JSON array, got: %s", lineNum, cmdStr)
-		}
-		// Validate JSON structure
 		var cmdArray []string
 		if err := json.Unmarshal([]byte(cmdStr), &cmdArray); err != nil {
-			return internal.Instruction{}, fmt.Errorf("line %d: CMD invalid JSON array: %v", lineNum, err)
+			return internal.Instruction{}, fmt.Errorf("line %d: CMD must be JSON array", lineNum)
 		}
 		if len(cmdArray) == 0 {
-			return internal.Instruction{}, fmt.Errorf("line %d: CMD array cannot be empty", lineNum)
+			return internal.Instruction{}, fmt.Errorf("line %d: CMD must be JSON array", lineNum)
 		}
 		return internal.Instruction{
-			Raw:  line,
+			Raw:  rawLine,
 			Op:   op,
 			Args: cmdArray,
 		}, nil
 
 	default:
-		return internal.Instruction{}, fmt.Errorf("line %d: unknown instruction %q", lineNum, op)
+		return internal.Instruction{}, fmt.Errorf("line %d: unknown instruction %s", lineNum, op)
 	}
 }
 
-// readFile reads the content of a file.
-// This is separated for easier testing and mocking.
-func readFile(filePath string) (string, error) {
-	content, err := internal.ReadFile(filePath)
-	return content, err
-}

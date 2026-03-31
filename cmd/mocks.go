@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"docksmith-engine/internal"
+	"docksmith-engine/internal/parser"
 )
-
-type mockParser struct{}
 
 type mockBuilder struct{}
 
@@ -41,24 +40,13 @@ type imageRecord struct {
 
 func newMockModules() modules {
 	return modules{
-		Parser:  &mockParser{},
+		Parser:  parser.New(),
 		Builder: &mockBuilder{},
 		Cache:   &mockCache{},
 		Layer:   &mockLayer{},
 		Image:   newMockImageStore(),
 		Runtime: &mockRuntime{},
 	}
-}
-
-func (m *mockParser) Parse(filePath string) ([]internal.Instruction, error) {
-	if strings.TrimSpace(filePath) == "" {
-		return nil, errors.New("empty Docksmithfile path")
-	}
-	return []internal.Instruction{
-		{Raw: "FROM base"},
-		{Raw: "COPY . /app"},
-		{Raw: "RUN echo hello"},
-	}, nil
 }
 
 func (m *mockBuilder) Build(instructions []internal.Instruction, tag string, context string, noCache bool) (internal.Image, error) {

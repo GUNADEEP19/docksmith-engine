@@ -3,8 +3,6 @@ package parser
 import (
 	"strings"
 	"testing"
-
-	"docksmith-engine/internal"
 )
 
 func TestParseValidDocksmithfile(t *testing.T) {
@@ -43,7 +41,7 @@ CMD ["echo","hi"]`
 		{0, "FROM", 1},
 		{1, "WORKDIR", 1},
 		{2, "COPY", 2},
-		{3, "ENV", 2},
+		{3, "ENV", 1},
 		{4, "RUN", 2},
 		{5, "CMD", 2},
 	}
@@ -100,8 +98,8 @@ ENV KEY value`
 		t.Fatal("Expected error for invalid ENV format, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "KEY=VALUE") {
-		t.Errorf("Expected KEY=VALUE error, got: %v", err)
+	if !strings.Contains(err.Error(), "invalid ENV format") {
+		t.Errorf("Expected invalid ENV format error, got: %v", err)
 	}
 }
 
@@ -219,14 +217,14 @@ ENV PATH=/usr/bin:$PATH`
 	if envInst.Op != "ENV" {
 		t.Errorf("Expected ENV instruction, got %s", envInst.Op)
 	}
-	if len(envInst.Args) != 2 {
-		t.Errorf("Expected 2 args for ENV, got %d", len(envInst.Args))
+	if len(envInst.Args) != 1 {
+		t.Errorf("Expected 1 arg for ENV (KEY=value), got %d", len(envInst.Args))
 	}
-	if envInst.Args[0] != "PATH" {
-		t.Errorf("Expected ENV key=PATH, got %s", envInst.Args[0])
+	if !strings.HasPrefix(envInst.Args[0], "PATH=") {
+		t.Errorf("Expected ENV to start with PATH=, got %s", envInst.Args[0])
 	}
-	if !strings.Contains(envInst.Args[1], "/usr/bin") {
-		t.Errorf("Expected ENV value to contain /usr/bin, got %s", envInst.Args[1])
+	if !strings.Contains(envInst.Args[0], "/usr/bin") {
+		t.Errorf("Expected ENV to contain /usr/bin, got %s", envInst.Args[0])
 	}
 }
 
