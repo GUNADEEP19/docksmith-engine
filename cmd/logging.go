@@ -7,7 +7,13 @@ import (
 
 func logStep(stepNumber int, total int, instruction string, cacheStatus string, duration float64) {
 	trimmed := strings.TrimSpace(instruction)
-	if strings.HasPrefix(strings.ToUpper(trimmed), "FROM ") {
+	op := ""
+	if fields := strings.Fields(trimmed); len(fields) > 0 {
+		op = strings.ToUpper(fields[0])
+	}
+
+	// Cache logging is only allowed for COPY and RUN.
+	if op != "COPY" && op != "RUN" {
 		fmt.Printf("Step %d/%d : %s\n", stepNumber, total, trimmed)
 		return
 	}

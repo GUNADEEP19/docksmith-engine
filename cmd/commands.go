@@ -51,10 +51,8 @@ func buildCommand(tag string, context string, noCache bool) error {
 	docksmithfilePath := filepath.Join(context, "Docksmithfile")
 	instructions, err := deps.Parser.Parse(docksmithfilePath)
 	if err != nil {
-		return fmt.Errorf("build failed: parse %s: %w", docksmithfilePath, err)
-	}
-	if len(instructions) == 0 {
-		return errors.New("build failed: no instructions found in Docksmithfile")
+		// Surface parser errors verbatim so line numbers/messages match expectations.
+		return err
 	}
 
 	for i, inst := range instructions {
@@ -62,11 +60,19 @@ func buildCommand(tag string, context string, noCache bool) error {
 		if strings.TrimSpace(instText) == "" {
 			instText = "<empty instruction>"
 		}
+		trimmed := strings.TrimSpace(instText)
+		op := ""
+		if fields := strings.Fields(trimmed); len(fields) > 0 {
+			op = strings.ToUpper(fields[0])
+		}
+
+		cacheStatus := ""
 		duration := 0.0
-		if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(instText)), "FROM ") {
+		if op == "COPY" || op == "RUN" {
+			cacheStatus = "CACHE MISS"
 			duration = float64(i) * 0.01
 		}
-		logStep(i+1, len(instructions), instText, "CACHE MISS", duration)
+		logStep(i+1, len(instructions), instText, cacheStatus, duration)
 	}
 
 	img, err := deps.Builder.Build(instructions, tag, context, noCache)

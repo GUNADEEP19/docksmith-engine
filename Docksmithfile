@@ -1,3 +1,6 @@
-# Docksmith build recipe
-# Example placeholder instructions
-FROM scratch
+FROM base
+WORKDIR /app
+COPY . /app
+ENV KEY=value
+RUN echo hello
+CMD ["echo","hi"]
