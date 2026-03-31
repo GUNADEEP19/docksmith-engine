@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -73,4 +74,14 @@ type ImageStore interface {
 // Runtime runs a container from an image.
 type Runtime interface {
 	Run(image Image, cmd []string, env map[string]string) (exitCode int, err error)
+}
+
+// ReadFile is a helper function to read file contents.
+// Used by parser and other modules that need to read files.
+func ReadFile(filePath string) (string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }

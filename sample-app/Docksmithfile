@@ -1,0 +1,6 @@
+FROM ubuntu:20.04
+WORKDIR /app
+COPY . /app
+ENV APP_ENV=production
+RUN echo "Building application"
+CMD ["./app"]
