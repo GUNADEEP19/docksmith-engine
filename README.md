@@ -4,28 +4,43 @@ A simplified Docker-like build and runtime system.
 
 ---
 
-##  Current Status (Gunadeep - CLI Orchestrator)
+## ✅ Current Status (Gunadeep + Deepak)
 
-The CLI orchestration layer is **fully implemented and tested using mocks**.
+### 🔵 CLI Orchestrator — COMPLETED (Gunadeep)
 
-### Completed:
-
-* CLI commands:
-
-	* `build`
-	* `run`
-	* `images`
-	* `rmi`
+* CLI commands: `build`, `run`, `images`, `rmi`
 * Argument parsing and validation
-* Command routing
-* Logging format (`[CACHE HIT]`, `[CACHE MISS]`)
-* Interface contracts for all subsystems
-* Mock implementations for testing full flow
+* Command routing (Parser → Builder → Runtime)
+* Strict logging format (spec-compliant)
+* Interface contracts defined
+* Mock system replaced progressively
 
-### Important:
+---
 
-* CLI **DOES NOT contain business logic**
-* All actual functionality must be implemented inside `internal/`
+### 🟢 Parser — COMPLETED (Deepak)
+
+* Parses `Docksmithfile` into structured instructions
+* Supports all 6 instructions:
+
+	* `FROM`
+	* `COPY`
+	* `RUN`
+	* `WORKDIR`
+	* `ENV`
+	* `CMD`
+* Strict validation:
+
+	* Unknown instructions → error with line number
+	* Invalid ENV → rejected
+	* Invalid CMD → rejected (must be JSON array)
+* Preserves:
+
+	* **Raw instruction string (CRITICAL for cache)**
+	* Order of instructions
+* Handles:
+
+	* Whitespace variations
+	* Case normalization (internally)
 
 ---
 
@@ -41,16 +56,15 @@ Do NOT modify:
 If you change interfaces or CLI flow:
 👉 You will break integration for everyone
 
----
+## 🧩 Work Allocation (Updated)
 
-## 🧩 Work Allocation
-
-| Member  | Module        |
-| ------- | ------------- |
-| Deepak  | Parser        |
-| Chinmay | Layer + Image |
-| Vishnu  | Cache         |
-| ALL     | Runtime       |
+| Member   | Module           | Status    |
+| -------- | ---------------- | --------- |
+| Gunadeep | CLI Orchestrator | ✅ DONE    |
+| Deepak   | Parser           | ✅ DONE    |
+| Chinmay  | Layer + Image    | 🔜 NEXT   |
+| Vishnu   | Cache            | ⏳ PENDING |
+| ALL      | Runtime          | 🔥 FINAL  |
 
 ---
 
@@ -69,83 +83,69 @@ CLI → Parser → Builder → (Cache + Layer + Image)
 ### Install Go
 
 #### macOS:
-
-```bash
+										 ↓
+									Runtime
 brew install go
 ```
 
-#### Windows:
+## 🚀 Current Working State
 
-Download from:
-https://go.dev/dl/
+Parser is fully integrated with CLI.
 
-Verify:
-
-```bash
-go version
-```
-
----
-
-## 🐧 OS REQUIREMENT (IMPORTANT)
-
-Runtime requires **Linux features (process isolation)**.
-
-### macOS / Windows:
-
-You MUST use:
-
-* WSL2 (Windows)
-* or Linux VM (VirtualBox / UTM)
-
-👉 Do NOT attempt runtime directly on macOS/Windows host
-👉 It will fail during demo (hard requirement)
-
----
-
-## 🚀 How to Run CLI (Current Working State)
-
-Using mocks:
-
-```bash
-go run ./cmd build -t test:latest .
-go run ./cmd images
-go run ./cmd run test:latest
-go run ./cmd rmi test:latest
-```
-
----
-
+### Run:
 ## 🧪 Expected Output
 
 Example:
-
 ```
-Step 1/3 : FROM base
 Step 2/3 : COPY . /app [CACHE MISS]
 Step 3/3 : RUN echo hello [CACHE MISS]
 Successfully built sha256:dummy test:latest
-```
+
+## 🧪 Expected Output (Correct Format)
+## 🔧 Development Rules
+
+Step 1/6 : FROM base
+Step 2/6 : WORKDIR /app
+Step 3/6 : COPY . /app [CACHE MISS] 0.02s
+Step 4/6 : ENV KEY=value
+Step 5/6 : RUN echo hello [CACHE MISS] 0.04s
+Step 6/6 : CMD ["echo","hi"]
+* All dependencies must be local
 
 ---
 
-## 🔧 Development Rules
 
-### 1. NO NETWORK USAGE
+## ⚠️ IMPORTANT RULES (STRICT)
+
+### 1. Cache Logging Rule
+
+* ONLY `COPY` and `RUN` show:
+
+	* `[CACHE HIT]` / `[CACHE MISS]`
+	* execution time
+
+* `FROM`, `WORKDIR`, `ENV`, `CMD`:
+
+	* ❌ NO cache status
+	* ❌ NO timing
+### 2. STRICT INTERFACE USAGE
+---
+
+### 2. NO NETWORK USAGE
 
 * No internet access in build or run
 * All dependencies must be local
 
 ---
 
-### 2. STRICT INTERFACE USAGE
+### 3. STRICT INTERFACE USAGE
 
 * Use only methods defined in `interfaces.go`
 * Do NOT bypass CLI
 
 ---
 
-### 3. DETERMINISTIC BUILDS
+### 4. DETERMINISTIC BUILDS
 
 * Same input = same output
 * Sort files
@@ -153,45 +153,79 @@ Successfully built sha256:dummy test:latest
 
 ---
 
-### 4. LAYER RULES
+## 🔥 NEXT TASK — Chinmay (Layer + Image System)
 
-* COPY and RUN → create layers
-* Layers must be immutable
-* Content-addressed storage
+### Your Job:
+
+Implement:
+
+* `internal/layer/`
+* `internal/image/`
 
 ---
 
-### 5. CACHE RULES
+### Requirements:
 
-* Exact key matching required
-* Cache miss → cascade
+#### Layer System
+
+* COPY and RUN → create layers
+* Store as tar files:
+
+	```
+	~/.docksmith/layers/<digest>.tar
+	```
+* Compute SHA-256 digest of tar
+* Must be deterministic
+
+---
+
+#### Image Manifest
+
+* Store JSON in:
+
+	```
+	~/.docksmith/images/
+	```
+* Include:
+
+	* name, tag
+	* digest
+	* config (Env, Cmd, WorkingDir)
+	* layers list
+
+---
+
+#### Extraction
+
+* Apply layers in order
+* Later layers overwrite earlier ones
+
+---
+
+## ❌ COMMON MISTAKES (DO NOT DO THIS)
+
+* Creating full snapshot instead of delta layer
+* Not sorting tar entries
+* Including timestamps in tar
+* Incorrect SHA-256 calculation
+* Modifying layer after creation
+* Ignoring instruction order
+
+---
+
+## 🧪 HOW TO VERIFY (Layer System)
+
+1. Same build twice → SAME digest
+2. Change one file → ONLY one layer changes
+3. Extract layers → correct final filesystem
 
 ---
 
 ## 🧪 Testing Strategy
 
-### Use mocks first (already working)
-
-Then replace with real implementations gradually.
-
----
-
-## 🔥 Integration Plan
-
-1. Parser ready → connect to CLI
-2. Layer system ready → connect to Builder
-3. Cache integrated into Builder
-4. Runtime implemented last
-
----
-
-## ❌ Common Mistakes (Avoid or Fail)
-
-* Running container without isolation
-* Using internet during build
-* Changing interfaces mid-project
-* Not sorting tar files
-* Incorrect cache key
+* CLI + Parser already verified
+* Replace mocks gradually
+* Test each module independently before integration
 
 ---
 
@@ -203,14 +237,23 @@ You are building:
 * Cache system
 * Container runtime
 
-NOT a CLI tool.
-
-CLI is already DONE.
+NOT just CLI or parser.
 
 ---
 
-## 📌 Next Step
+## 📌 Current Priority
 
-Start implementing your module inside `internal/` and integrate via interfaces.
+👉 Chinmay must complete Layer + Image system
+👉 DO NOT start cache or runtime before this
 
-DO NOT modify CLI.
+---
+
+## ⚠️ Final Warning
+
+If Layer system is incorrect:
+
+* Cache will fail
+* Runtime will fail
+* Entire project collapses
+
+Build it carefully.
