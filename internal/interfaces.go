@@ -29,8 +29,16 @@ func (i Instruction) String() string {
 
 // ImageConfig stores image runtime metadata used by the run orchestration path.
 type ImageConfig struct {
-	Cmd []string
-	Env map[string]string
+	Cmd        []string
+	Env        map[string]string
+	WorkingDir string
+}
+
+// ImageLayer records one layer in an image manifest (COPY/RUN steps only).
+type ImageLayer struct {
+	Digest    string
+	Size      int64
+	CreatedBy string
 }
 
 // Image represents a built or loaded image.
@@ -40,6 +48,7 @@ type Image struct {
 	Digest    string
 	CreatedAt time.Time
 	Config    ImageConfig
+	Layers    []ImageLayer
 }
 
 // Parser parses Docksmithfile instructions.
