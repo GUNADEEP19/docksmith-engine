@@ -310,6 +310,12 @@ func snapshotTree(root string) (snap, error) {
 		if err != nil {
 			return err
 		}
+		if shouldIgnoreName(filepath.Base(p)) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			return err
@@ -330,6 +336,20 @@ func snapshotTree(root string) (snap, error) {
 		return nil
 	})
 	return m, err
+}
+
+func shouldIgnoreName(name string) bool {
+	// Exclude known nondeterministic/system metadata.
+	if name == ".docksmith" {
+		return true
+	}
+	if name == ".DS_Store" || name == "Thumbs.db" || name == "__MACOSX" {
+		return true
+	}
+	if strings.HasPrefix(name, "._") {
+		return true
+	}
+	return false
 }
 
 func deltaPaths(before, after snap) []string {
@@ -372,6 +392,9 @@ func buildDeterministicTar(root string, relPaths []string) ([]byte, error) {
 	for _, rp := range relPaths {
 		rp = filepath.ToSlash(rp)
 		diskPath := filepath.Join(root, filepath.FromSlash(rp))
+		if shouldIgnoreName(filepath.Base(diskPath)) {
+			continue
+		}
 		st, err := os.Stat(diskPath)
 		if err != nil {
 			return nil, fmt.Errorf("layer: stat %s: %w", rp, err)
@@ -418,9 +441,13 @@ func buildDeterministicTar(root string, relPaths []string) ([]byte, error) {
 		}
 		hdr.Uid = 0
 		hdr.Gid = 0
+		hdr.Uname = ""
+		hdr.Gname = ""
 		hdr.ModTime = epoch
-		// USTAR cannot encode AccessTime/ChangeTime; leave unset.
-		hdr.Format = tar.FormatUSTAR
+		hdr.AccessTime = epoch
+		hdr.ChangeTime = epoch
+		// Use PAX so access/change times are encoded deterministically.
+		hdr.Format = tar.FormatPAX
 		if err := tw.WriteHeader(&hdr); err != nil {
 			return nil, err
 		}

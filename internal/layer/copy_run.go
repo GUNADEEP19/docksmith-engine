@@ -30,29 +30,60 @@ func applyCopy(root, ctx string, args []string) error {
 	destAbs := filepath.Join(root, filepath.FromSlash(destRel))
 
 	multiSrc := len(sources) > 1
-	destIsDir := strings.HasSuffix(destArg, "/") || strings.HasSuffix(destArg, string(os.PathSeparator))
+	// Treat destination as directory when:
+	// - multiple sources
+	// - destination ends with '/'
+	// - destination does not exist yet
+	stat, err := os.Stat(destAbs)
+	destMissing := err != nil && os.IsNotExist(err)
+	destIsDir := multiSrc || strings.HasSuffix(destArg, "/") || strings.HasSuffix(destArg, string(os.PathSeparator)) || destMissing
+	if destIsDir {
+		if err == nil && stat != nil && !stat.IsDir() {
+			return fmt.Errorf("destination %q exists and is not a directory", destArg)
+		}
+		if mkErr := os.MkdirAll(destAbs, 0o755); mkErr != nil {
+			return mkErr
+		}
+	}
 
 	for _, src := range sources {
 		src = strings.TrimSpace(src)
 		srcPath := filepath.Join(ctx, src)
-		if err := copyOneSource(ctx, srcPath, src, destAbs, multiSrc || destIsDir); err != nil {
+		if err := copyOneSource(ctx, srcPath, src, destAbs, destIsDir); err != nil {
 			return fmt.Errorf("layer: COPY %q: %w", src, err)
 		}
 	}
 	return nil
 }
 
-func copyOneSource(ctxRoot, srcPath, srcArg, destAbs string, destMustBeDir bool) error {
+func copyOneSource(ctxRoot, srcPath, srcArg, destAbs string, destIsDirHint bool) error {
 	st, err := os.Stat(srcPath)
 	if err != nil {
 		return err
 	}
 
-	if srcArg == "." || srcArg == "./." {
-		if destMustBeDir {
-			return copyDirContents(ctxRoot, destAbs)
+	// Destination must be treated as a directory when:
+	// - source is a directory
+	// - source is '.' (copy contents)
+	// - applyCopy already determined destination should be directory
+	srcIsDot := srcArg == "." || srcArg == "./."
+	destMustBeDir := destIsDirHint || st.IsDir() || srcIsDot
+	if destMustBeDir {
+		if dstSt, stErr := os.Stat(destAbs); stErr == nil {
+			if !dstSt.IsDir() {
+				return fmt.Errorf("destination exists and is not a directory")
+			}
+		} else if os.IsNotExist(stErr) {
+			if mkErr := os.MkdirAll(destAbs, 0o755); mkErr != nil {
+				return mkErr
+			}
+		} else if stErr != nil {
+			return stErr
 		}
-		return fmt.Errorf("COPY . requires destination to be a directory")
+	}
+
+	if srcIsDot {
+		return copyDirContents(ctxRoot, destAbs)
 	}
 
 	if st.IsDir() {
@@ -92,7 +123,7 @@ func copyDirContents(srcDir, dstDir string) error {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if name == ".docksmith" {
+		if shouldIgnoreName(name) {
 			continue
 		}
 		from := filepath.Join(srcDir, name)
@@ -121,6 +152,12 @@ func copyDirTree(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if shouldIgnoreName(filepath.Base(p)) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		rel, err := filepath.Rel(src, p)
 		if err != nil {

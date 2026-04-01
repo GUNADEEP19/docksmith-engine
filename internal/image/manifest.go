@@ -85,6 +85,8 @@ func toManifest(img internal.Image) manifest {
 func serializeManifest(img internal.Image) (finalJSON []byte, digest string, err error) {
 	m := toManifest(img)
 	m.Digest = ""
+	// Do not include Created in the digest input; it is metadata.
+	m.Created = ""
 	raw, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, "", err
@@ -92,6 +94,8 @@ func serializeManifest(img internal.Image) (finalJSON []byte, digest string, err
 	sum := sha256.Sum256(raw)
 	digest = digestPrefix + hex.EncodeToString(sum[:])
 	m.Digest = digest
+	// Emit Created in the stored JSON, but keep digest stable.
+	m.Created = toManifest(img).Created
 	finalJSON, err = json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, "", err

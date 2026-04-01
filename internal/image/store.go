@@ -58,14 +58,38 @@ func (s *Store) Save(image internal.Image) error {
 	if strings.TrimSpace(image.Name) == "" || strings.TrimSpace(image.Tag) == "" {
 		return fmt.Errorf("image: name and tag are required")
 	}
-	finalJSON, _, err := serializeManifest(image)
-	if err != nil {
-		return err
-	}
 	if err := os.MkdirAll(s.imagesDir(), 0o755); err != nil {
 		return fmt.Errorf("image: mkdir: %w", err)
 	}
 	path := manifestFilePath(s.imagesDir(), image.Name, image.Tag)
+
+	// Compute deterministic digest (independent of Created).
+	_, digest, err := serializeManifest(image)
+	if err != nil {
+		return err
+	}
+	image.Digest = digest
+
+	// created semantics:
+	// 1) First build: set CreatedAt to now.
+	// 2) Rebuild with identical content (digest unchanged): preserve existing CreatedAt.
+	existing, err := os.ReadFile(path)
+	if err == nil {
+		oldImg, parseErr := parseManifestBytes(existing)
+		if parseErr == nil && oldImg.Digest == digest && !oldImg.CreatedAt.IsZero() {
+			image.CreatedAt = oldImg.CreatedAt
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if image.CreatedAt.IsZero() {
+		image.CreatedAt = time.Now().UTC()
+	}
+
+	finalJSON, _, err := serializeManifest(image)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, finalJSON, 0o644)
 }
 
