@@ -159,3 +159,19 @@ func TestTarEntriesSortedLexicographically(t *testing.T) {
 		t.Fatalf("layer digest must not depend on wall clock: %s vs %s", d2a, d2b)
 	}
 }
+
+func TestCopyDotCreatesDestinationDirWhenMissing(t *testing.T) {
+	root := testRoot(t)
+	svc := New(WithDataRoot(root))
+	ctx := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ctx, "f.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Destination has no trailing slash and does not exist yet; must be treated as directory.
+	inst := internal.Instruction{Op: "COPY", Args: []string{".", "/app"}, Raw: "COPY . /app"}
+	_, _, err := svc.CreateLayer("", inst, ctx)
+	if err != nil {
+		t.Fatalf("COPY . /app should succeed, got: %v", err)
+	}
+}

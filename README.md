@@ -22,238 +22,253 @@ A simplified Docker-like build and runtime system.
 * Parses `Docksmithfile` into structured instructions
 * Supports all 6 instructions:
 
-	* `FROM`
-	* `COPY`
-	* `RUN`
-	* `WORKDIR`
-	* `ENV`
-	* `CMD`
-* Strict validation:
+	# Docksmith Engine
 
-	* Unknown instructions → error with line number
-	* Invalid ENV → rejected
-	* Invalid CMD → rejected (must be JSON array)
-* Preserves:
+	A simplified Docker-like build and runtime system.
 
-	* **Raw instruction string (CRITICAL for cache)**
-	* Order of instructions
-* Handles:
+	---
 
-	* Whitespace variations
-	* Case normalization (internally)
+	## ✅ Current Status (Gunadeep + Deepak + Chinmay)
 
----
+	### 🔵 CLI Orchestrator — DONE (Gunadeep)
 
-## ⚠️ DO NOT TOUCH (CRITICAL)
+	* Commands: `build`, `run`, `images`, `rmi`
+	* Argument parsing + validation
+	* Strict logging (spec-compliant)
+	* Clean orchestration (no business logic inside CLI)
+	* Stable interfaces defined
 
-Do NOT modify:
+	---
 
-* `cmd/main.go`
-* `cmd/commands.go`
-* `internal/interfaces.go`
-* logging format
+	### 🟢 Parser — DONE (Deepak)
 
-If you change interfaces or CLI flow:
-👉 You will break integration for everyone
+	* Parses `Docksmithfile` into instructions
+	* Supports:
 
-## 🧩 Work Allocation (Updated)
+		* FROM, COPY, RUN, WORKDIR, ENV, CMD
+	* Strict validation with line numbers
+	* Preserves:
 
-| Member   | Module           | Status    |
-| -------- | ---------------- | --------- |
-| Gunadeep | CLI Orchestrator | ✅ DONE    |
-| Deepak   | Parser           | ✅ DONE    |
-| Chinmay  | Layer + Image    | 🔜 NEXT   |
-| Vishnu   | Cache            | ⏳ PENDING |
-| ALL      | Runtime          | 🔥 FINAL  |
+		* Raw instruction string (CRITICAL for cache)
+		* Instruction order
+	* Handles whitespace + case normalization
 
----
+	---
 
-## 🏗️ Architecture Flow
+	### 🟡 Layer + Image System — DONE (Chinmay)
 
-```
-CLI → Parser → Builder → (Cache + Layer + Image)
-										 ↓
-									Runtime
-```
+	#### Layer System:
 
----
+	* ONLY `COPY` and `RUN` create layers
+	* Stored in:
 
-## 📦 Environment Setup
+		```
+		~/.docksmith/layers/
+		```
+	* Deterministic:
 
-### Install Go
+		* Sorted file order
+		* Zero timestamps
+	* SHA-256 content-addressed storage
+	* Immutable layers
 
-#### macOS:
-										 ↓
-									Runtime
-brew install go
-```
+	#### Image Manifest:
 
-## 🚀 Current Working State
+	* Stored in:
 
-Parser is fully integrated with CLI.
+		```
+		~/.docksmith/images/
+		```
+	* Includes:
 
-### Run:
-## 🧪 Expected Output
+		* name, tag, digest
+		* created timestamp (stable)
+		* config (Env, Cmd, WorkingDir)
+		* ordered layer list
 
-Example:
-```
-Step 2/3 : COPY . /app [CACHE MISS]
-Step 3/3 : RUN echo hello [CACHE MISS]
-Successfully built sha256:dummy test:latest
+	#### Verified:
 
-## 🧪 Expected Output (Correct Format)
-## 🔧 Development Rules
+	* Same build → SAME digest
+	* File change → new digest (stable after change)
+	* Correct layer count (COPY + RUN only)
 
-Step 1/6 : FROM base
-Step 2/6 : WORKDIR /app
-Step 3/6 : COPY . /app [CACHE MISS] 0.02s
-Step 4/6 : ENV KEY=value
-Step 5/6 : RUN echo hello [CACHE MISS] 0.04s
-Step 6/6 : CMD ["echo","hi"]
-* All dependencies must be local
+	---
 
----
+	## ⚠️ DO NOT TOUCH (CRITICAL)
 
+	Do NOT modify:
 
-## ⚠️ IMPORTANT RULES (STRICT)
+	* `cmd/main.go`
+	* `cmd/commands.go`
+	* `internal/interfaces.go`
+	* logging format
+	* layer determinism logic
 
-### 1. Cache Logging Rule
+	If you change these:
+	👉 You will break the entire system
 
-* ONLY `COPY` and `RUN` show:
+	---
 
-	* `[CACHE HIT]` / `[CACHE MISS]`
-	* execution time
+	## 🧩 Work Allocation (Updated)
 
-* `FROM`, `WORKDIR`, `ENV`, `CMD`:
+	| Member   | Module           | Status  |
+	| -------- | ---------------- | ------- |
+	| Gunadeep | CLI Orchestrator | ✅ DONE  |
+	| Deepak   | Parser           | ✅ DONE  |
+	| Chinmay  | Layer + Image    | ✅ DONE  |
+	| Vishnu   | Cache            | 🔥 NEXT |
+	| ALL      | Runtime          | ⏳ FINAL |
 
-	* ❌ NO cache status
-	* ❌ NO timing
-### 2. STRICT INTERFACE USAGE
----
+	---
 
-### 2. NO NETWORK USAGE
+	## 🏗️ Architecture Flow
 
-* No internet access in build or run
-* All dependencies must be local
-
----
-
-### 3. STRICT INTERFACE USAGE
-
-* Use only methods defined in `interfaces.go`
-* Do NOT bypass CLI
-
----
-
-### 4. DETERMINISTIC BUILDS
-
-* Same input = same output
-* Sort files
-* Zero timestamps in tar
-
----
-
-## 🔥 NEXT TASK — Chinmay (Layer + Image System)
-
-### Your Job:
-
-Implement:
-
-* `internal/layer/`
-* `internal/image/`
-
----
-
-### Requirements:
-
-#### Layer System
-
-* COPY and RUN → create layers
-* Store as tar files:
-
+	```id="flow01"
+	CLI → Parser → Builder → (Cache + Layer + Image)
+											 ↓
+										Runtime
 	```
-	~/.docksmith/layers/<digest>.tar
+
+	---
+
+	## 🚀 Current Working State
+
+	```bash id="run01"
+	go run ./cmd build -t test:latest .
+	go run ./cmd run test:latest
+	go run ./cmd images
+	go run ./cmd rmi test:latest
 	```
-* Compute SHA-256 digest of tar
-* Must be deterministic
 
----
+	---
 
-#### Image Manifest
+	## 🧪 Expected Output
 
-* Store JSON in:
-
+	```id="output01"
+	Step 1/6 : FROM base
+	Step 2/6 : WORKDIR /app
+	Step 3/6 : COPY . /app [CACHE MISS]
+	Step 4/6 : ENV KEY=value
+	Step 5/6 : RUN echo hello [CACHE MISS]
+	Step 6/6 : CMD ["echo","hi"]
+	Successfully built sha256:xxx test:latest
 	```
-	~/.docksmith/images/
-	```
-* Include:
 
-	* name, tag
-	* digest
-	* config (Env, Cmd, WorkingDir)
-	* layers list
+	---
 
----
+	## ⚠️ STRICT RULES
 
-#### Extraction
+	### 1. Layer Creation Rule
 
-* Apply layers in order
-* Later layers overwrite earlier ones
+	* ONLY:
 
----
+		* COPY
+		* RUN
+	* NO layers for:
 
-## ❌ COMMON MISTAKES (DO NOT DO THIS)
+		* FROM, WORKDIR, ENV, CMD
 
-* Creating full snapshot instead of delta layer
-* Not sorting tar entries
-* Including timestamps in tar
-* Incorrect SHA-256 calculation
-* Modifying layer after creation
-* Ignoring instruction order
+	---
 
----
+	### 2. Determinism Rule
 
-## 🧪 HOW TO VERIFY (Layer System)
+	* Same input → same digest
+	* Required:
 
-1. Same build twice → SAME digest
-2. Change one file → ONLY one layer changes
-3. Extract layers → correct final filesystem
+		* sorted tar entries
+		* zero timestamps
 
----
+	---
 
-## 🧪 Testing Strategy
+	### 3. Manifest Rule
 
-* CLI + Parser already verified
-* Replace mocks gradually
-* Test each module independently before integration
+	* `created` must:
 
----
+		* be ISO-8601 format
+		* remain SAME across rebuilds
 
-## 🧠 Final Goal
+	---
 
-You are building:
+	### 4. Logging Rule
 
-* Image builder
-* Cache system
-* Container runtime
+	* Cache logs ONLY for:
 
-NOT just CLI or parser.
+		* COPY
+		* RUN
+	* No cache logs for others
 
----
+	---
 
-## 📌 Current Priority
+	### 5. NO NETWORK
 
-👉 Chinmay must complete Layer + Image system
-👉 DO NOT start cache or runtime before this
+	* No internet during build or run
 
----
+	---
 
-## ⚠️ Final Warning
+	## 🔥 NEXT TASK — Vishnu (Cache System)
 
-If Layer system is incorrect:
+	### ⚠️ IMPORTANT
 
-* Cache will fail
-* Runtime will fail
-* Entire project collapses
+	Current `[CACHE MISS]` is FAKE
 
-Build it carefully.
+	Real cache must:
+
+	* Compute deterministic cache key
+	* Reuse layers when key matches
+	* Follow strict invalidation rules
+
+	---
+
+	## ❌ COMMON MISTAKES (CRITICAL)
+
+	* Creating layers for all instructions ❌
+	* Non-deterministic tar files ❌
+	* Changing `created` timestamp every build ❌
+	* Wrong cache key logic ❌
+	* Ignoring instruction order ❌
+
+	---
+
+	## 🧪 Testing Strategy
+
+	Already verified:
+
+	* CLI ✔
+	* Parser ✔
+	* Layer/Image ✔
+
+	Next:
+
+	* Cache verification (critical)
+	* Runtime validation (final)
+
+	---
+
+	## 🧠 Final Goal
+
+	You are building:
+
+	* Image builder
+	* Deterministic cache system
+	* Container runtime with isolation
+
+	NOT just a CLI tool.
+
+	---
+
+	## 📌 Current Priority
+
+	👉 Vishnu must implement CACHE SYSTEM
+	👉 Do NOT start runtime before cache is correct
+
+	---
+
+	## ⚠️ Final Warning
+
+	If cache is wrong:
+
+	* builds will not reuse layers
+	* system becomes inefficient
+	* demo will fail
+
+	Implement carefully.

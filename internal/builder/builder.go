@@ -97,7 +97,8 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 	img := internal.Image{
 		Name:      name,
 		Tag:       imgTag,
-		CreatedAt: time.Now().UTC(),
+		// Deterministic builds: do not inject wall-clock time into the manifest digest.
+		CreatedAt: time.Time{},
 		Config: internal.ImageConfig{
 			Cmd:        cmd,
 			Env:        env,
