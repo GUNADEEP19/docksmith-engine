@@ -12,6 +12,7 @@ import (
 	"docksmith-engine/internal/image"
 	"docksmith-engine/internal/layer"
 	"docksmith-engine/internal/parser"
+	"docksmith-engine/internal/runtime"
 )
 
 type envFlag map[string]string
@@ -47,7 +48,7 @@ func main() {
 		Cache:   cache.New(""),
 		Layer:   lyr,
 		Image:   image.NewStore(),
-		Runtime: &mockRuntime{},
+		Runtime: runtime.New(),
 	})
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
