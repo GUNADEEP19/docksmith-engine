@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"docksmith-engine/internal"
+	"docksmith-engine/internal/builder"
 )
 
 type modules struct {
@@ -55,27 +56,27 @@ func buildCommand(tag string, context string, noCache bool) error {
 		return err
 	}
 
-	for i, inst := range instructions {
-		instText := inst.String()
-		if strings.TrimSpace(instText) == "" {
-			instText = "<empty instruction>"
+	// Prefer real per-step cache HIT/MISS reporting if the builder supports it.
+	var img internal.Image
+	if b, ok := deps.Builder.(*builder.Builder); ok {
+		img, err = b.BuildWithProgress(instructions, tag, context, noCache, func(step internal.BuildStep) {
+			instText := step.Instruction
+			if strings.TrimSpace(instText) == "" {
+				instText = "<empty instruction>"
+			}
+			logStep(step.Index, step.Total, instText, step.CacheStatus, step.DurationSeconds)
+		})
+	} else {
+		// Fallback: log steps without real cache info.
+		for i, inst := range instructions {
+			instText := inst.String()
+			if strings.TrimSpace(instText) == "" {
+				instText = "<empty instruction>"
+			}
+			logStep(i+1, len(instructions), instText, "", 0)
 		}
-		trimmed := strings.TrimSpace(instText)
-		op := ""
-		if fields := strings.Fields(trimmed); len(fields) > 0 {
-			op = strings.ToUpper(fields[0])
-		}
-
-		cacheStatus := ""
-		duration := 0.0
-		if op == "COPY" || op == "RUN" {
-			cacheStatus = "CACHE MISS"
-			duration = float64(i) * 0.01
-		}
-		logStep(i+1, len(instructions), instText, cacheStatus, duration)
+		img, err = deps.Builder.Build(instructions, tag, context, noCache)
 	}
-
-	img, err := deps.Builder.Build(instructions, tag, context, noCache)
 	if err != nil {
 		return fmt.Errorf("build failed: %w", err)
 	}

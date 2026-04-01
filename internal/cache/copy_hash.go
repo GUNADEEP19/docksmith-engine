@@ -17,6 +17,17 @@ func copySourcesHashBlock(ctxAbs string, args []string) (string, error) {
 	if len(args) < 2 {
 		return "", fmt.Errorf("COPY requires source and destination")
 	}
+	// Include the exact COPY args (including destination) so semantic changes
+	// to the instruction cannot reuse a previous layer.
+	var header strings.Builder
+	for i, a := range args {
+		if i > 0 {
+			header.WriteByte('\n')
+		}
+		header.WriteString(strings.TrimSpace(a))
+	}
+	header.WriteString("\n--\n")
+
 	sources := args[:len(args)-1]
 	seen := make(map[string]struct{})
 	for _, src := range sources {
@@ -31,6 +42,7 @@ func copySourcesHashBlock(ctxAbs string, args []string) (string, error) {
 	sort.Strings(paths)
 
 	var b strings.Builder
+	b.WriteString(header.String())
 	for _, rel := range paths {
 		disk := filepath.Join(ctxAbs, filepath.FromSlash(rel))
 		h, err := hashFileContent(disk)
@@ -146,6 +158,9 @@ func addSeen(seen map[string]struct{}, rel string) {
 
 func shouldIgnoreName(name string) bool {
 	if name == ".docksmith" {
+		return true
+	}
+	if name == "Docksmithfile" {
 		return true
 	}
 	if name == ".DS_Store" || name == "Thumbs.db" || name == "__MACOSX" {

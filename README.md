@@ -17,223 +17,60 @@ A simplified Docker-like build and runtime system.
 
 ---
 
-### 🟢 Parser — COMPLETED (Deepak)
 
-* Parses `Docksmithfile` into structured instructions
-* Supports all 6 instructions:
+## ✅ Current Status
 
-	# Docksmith Engine
+### 🔵 CLI Orchestrator — DONE
 
-	A simplified Docker-like build and runtime system.
+- Commands: `build`, `run`, `images`, `rmi`
+- Argument parsing + validation
+- Strict logging format (cache/timing only on `COPY` and `RUN`)
 
-	---
+### 🟢 Parser — DONE
 
-	## ✅ Current Status (Gunadeep + Deepak + Chinmay)
+- Parses `Docksmithfile` into instructions: `FROM`, `COPY`, `RUN`, `WORKDIR`, `ENV`, `CMD`
+- Strict validation with line-numbered errors
+- Preserves exact raw instruction text (used for caching)
 
-	### 🔵 CLI Orchestrator — DONE (Gunadeep)
+### 🟡 Layer + Image System — DONE
 
-	* Commands: `build`, `run`, `images`, `rmi`
-	* Argument parsing + validation
-	* Strict logging (spec-compliant)
-	* Clean orchestration (no business logic inside CLI)
-	* Stable interfaces defined
+- Only `COPY` and `RUN` create layers
+- Deterministic outputs (sorted entries, normalized metadata)
+- Stores layers in `~/.docksmith/layers/` and manifests in `~/.docksmith/images/`
+- Manifest `created` is stable across identical rebuilds (digest remains stable)
 
-	---
+### 🟣 Cache System — DONE
 
-	### 🟢 Parser — DONE (Deepak)
+- Real cache storage: `~/.docksmith/cache/`
+- Real `[CACHE HIT]` / `[CACHE MISS]` reporting for `COPY` and `RUN`
+- Cascade invalidation works (a miss forces downstream misses)
+- Cache keys include raw formatting changes as required
 
-	* Parses `Docksmithfile` into instructions
-	* Supports:
+#### Cache Protocol Verification (PHASE 1–7)
 
-		* FROM, COPY, RUN, WORKDIR, ENV, CMD
-	* Strict validation with line numbers
-	* Preserves:
+- Clean build → MISS, rebuild unchanged → HIT
+- Context file change → COPY MISS and cascade RUN MISS
+- Revert file → HIT again
+- ENV/WORKDIR changes → COPY HIT, RUN MISS
+- Raw formatting change → MISS
+- `--no-cache` → always MISS
 
-		* Raw instruction string (CRITICAL for cache)
-		* Instruction order
-	* Handles whitespace + case normalization
+---
 
-	---
+## 🏗️ Architecture Flow
 
-	### 🟡 Layer + Image System — DONE (Chinmay)
+CLI → Parser → Builder → (Cache + Layer + Image) → Runtime
 
-	#### Layer System:
+---
 
-	* ONLY `COPY` and `RUN` create layers
-	* Stored in:
+## 🚀 Quick Start
 
-		```
-		~/.docksmith/layers/
-		```
-	* Deterministic:
-
-		* Sorted file order
-		* Zero timestamps
-	* SHA-256 content-addressed storage
-	* Immutable layers
-
-	#### Image Manifest:
-
-	* Stored in:
-
-		```
-		~/.docksmith/images/
-		```
-	* Includes:
-
-		* name, tag, digest
-		* created timestamp (stable)
-		* config (Env, Cmd, WorkingDir)
-		* ordered layer list
-
-	#### Verified:
-
-	* Same build → SAME digest
-	* File change → new digest (stable after change)
-	* Correct layer count (COPY + RUN only)
-
-	---
-
-	## ⚠️ DO NOT TOUCH (CRITICAL)
-
-	Do NOT modify:
-
-	* `cmd/main.go`
-	* `cmd/commands.go`
-	* `internal/interfaces.go`
-	* logging format
-	* layer determinism logic
-
-	If you change these:
-	👉 You will break the entire system
-
-	---
-
-	## 🧩 Work Allocation (Updated)
-
-	| Member   | Module           | Status  |
-	| -------- | ---------------- | ------- |
-	| Gunadeep | CLI Orchestrator | ✅ DONE  |
-	| Deepak   | Parser           | ✅ DONE  |
-	| Chinmay  | Layer + Image    | ✅ DONE  |
-	| Vishnu   | Cache            | 🔥 NEXT |
-	| ALL      | Runtime          | ⏳ FINAL |
-
-	---
-
-	## 🏗️ Architecture Flow
-
-	```id="flow01"
-	CLI → Parser → Builder → (Cache + Layer + Image)
-											 ↓
-										Runtime
-	```
-
-	---
-
-	## 🚀 Current Working State
-
-	```bash id="run01"
-	go run ./cmd build -t test:latest .
-	go run ./cmd run test:latest
-	go run ./cmd images
-	go run ./cmd rmi test:latest
-	```
-
-	---
-
-	## 🧪 Expected Output
-
-	```id="output01"
-	Step 1/6 : FROM base
-	Step 2/6 : WORKDIR /app
-	Step 3/6 : COPY . /app [CACHE MISS]
-	Step 4/6 : ENV KEY=value
-	Step 5/6 : RUN echo hello [CACHE MISS]
-	Step 6/6 : CMD ["echo","hi"]
-	Successfully built sha256:xxx test:latest
-	```
-
-	---
-
-	## ⚠️ STRICT RULES
-
-	### 1. Layer Creation Rule
-
-	* ONLY:
-
-		* COPY
-		* RUN
-	* NO layers for:
-
-		* FROM, WORKDIR, ENV, CMD
-
-	---
-
-	### 2. Determinism Rule
-
-	* Same input → same digest
-	* Required:
-
-		* sorted tar entries
-		* zero timestamps
-
-	---
-
-	### 3. Manifest Rule
-
-	* `created` must:
-
-		* be ISO-8601 format
-		* remain SAME across rebuilds
-
-	---
-
-	### 4. Logging Rule
-
-	* Cache logs ONLY for:
-
-		* COPY
-		* RUN
-	* No cache logs for others
-
-	---
-
-	### 5. NO NETWORK
-
-	* No internet during build or run
-
-	---
-
-	## 🔥 NEXT TASK — Vishnu (Cache System)
-
-	### ⚠️ IMPORTANT
-
-	Current `[CACHE MISS]` is FAKE
-
-	Real cache must:
-
-	* Compute deterministic cache key
-	* Reuse layers when key matches
-	* Follow strict invalidation rules
-
-	---
-
-	## ❌ COMMON MISTAKES (CRITICAL)
-
-	* Creating layers for all instructions ❌
-	* Non-deterministic tar files ❌
-	* Changing `created` timestamp every build ❌
-	* Wrong cache key logic ❌
-	* Ignoring instruction order ❌
-
-	---
-
-	## 🧪 Testing Strategy
-
-	Already verified:
-
-	* CLI ✔
+```bash
+go run ./cmd build -t test:latest .
+go run ./cmd run test:latest
+go run ./cmd images
+go run ./cmd rmi test:latest
+```
 	* Parser ✔
 	* Layer/Image ✔
 
