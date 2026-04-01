@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"docksmith-engine/internal"
-	"docksmith-engine/internal/parser"
 )
 
 type mockBuilder struct{}
@@ -36,17 +35,6 @@ type imageRecord struct {
 	Digest string            `json:"digest"`
 	Cmd    []string          `json:"cmd"`
 	Env    map[string]string `json:"env"`
-}
-
-func newMockModules() modules {
-	return modules{
-		Parser:  parser.New(),
-		Builder: &mockBuilder{},
-		Cache:   &mockCache{},
-		Layer:   &mockLayer{},
-		Image:   newMockImageStore(),
-		Runtime: &mockRuntime{},
-	}
 }
 
 func (m *mockBuilder) Build(instructions []internal.Instruction, tag string, context string, noCache bool) (internal.Image, error) {

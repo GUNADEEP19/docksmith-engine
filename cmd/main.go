@@ -6,6 +6,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"docksmith-engine/internal/builder"
+	"docksmith-engine/internal/image"
+	"docksmith-engine/internal/layer"
+	"docksmith-engine/internal/parser"
 )
 
 type envFlag map[string]string
@@ -34,7 +39,15 @@ func (e envFlag) Set(value string) error {
 }
 
 func main() {
-	setModules(newMockModules())
+	lyr := layer.New()
+	setModules(modules{
+		Parser:  parser.New(),
+		Builder: builder.New(lyr),
+		Cache:   &mockCache{},
+		Layer:   lyr,
+		Image:   image.NewStore(),
+		Runtime: &mockRuntime{},
+	})
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
