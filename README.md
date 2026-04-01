@@ -106,7 +106,7 @@ Includes:
 | Deepak   | Parser           | ✅ DONE  |
 | Chinmay  | Layer + Image    | ✅ DONE  |
 | Vishnu   | Cache            | ✅ DONE  |
-| ALL      | Runtime          | 🔥 NEXT |
+| ALL      | Runtime          | ✅ DONE (Linux/WSL2) |
 
 ---
 
@@ -125,7 +125,7 @@ CLI → Parser → Builder → (Cache + Layer + Image)
 ```bash id="cmds01"
 go run ./cmd build -t test:latest .
 go run ./cmd images
-go run ./cmd run test:latest   # currently mock runtime
+sudo go run ./cmd run test:latest   # Linux/WSL2 only (chroot isolation)
 go run ./cmd rmi test:latest
 ```
 
@@ -193,7 +193,7 @@ Successfully built sha256:xxx test:latest
 
 ---
 
-## 🚨 NEXT TASK — RUNTIME (FINAL MODULE)
+## 🧱 Runtime — DONE (Linux/WSL2)
 
 ### Goal:
 
@@ -293,55 +293,3 @@ If runtime is wrong:
 Isolation is a **pass/fail requirement**
 
 Implement carefully.
-## 🏗️ Architecture Flow
-
-CLI → Parser → Builder → (Cache + Layer + Image) → Runtime
-
----
-
-## 🚀 Quick Start
-
-```bash
-go run ./cmd build -t test:latest .
-go run ./cmd run test:latest
-go run ./cmd images
-go run ./cmd rmi test:latest
-```
-	* Parser ✔
-	* Layer/Image ✔
-
-	Next:
-
-	* Cache verification (critical)
-	* Runtime validation (final)
-
-	---
-
-	## 🧠 Final Goal
-
-	You are building:
-
-	* Image builder
-	* Deterministic cache system
-	* Container runtime with isolation
-
-	NOT just a CLI tool.
-
-	---
-
-	## 📌 Current Priority
-
-	👉 Vishnu must implement CACHE SYSTEM
-	👉 Do NOT start runtime before cache is correct
-
-	---
-
-	## ⚠️ Final Warning
-
-	If cache is wrong:
-
-	* builds will not reuse layers
-	* system becomes inefficient
-	* demo will fail
-
-	Implement carefully.
