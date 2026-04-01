@@ -3,28 +3,81 @@ package builder
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"docksmith-engine/internal"
+	"docksmith-engine/internal/cache"
 	"docksmith-engine/internal/image"
 )
 
 // Builder implements internal.Builder using layer deltas and image manifest digests.
 type Builder struct {
-	layer internal.Layer
+	layer         internal.Layer
+	cache         internal.Cache
+	docksmithRoot string
+}
+
+// Option configures Builder construction.
+type Option func(*Builder)
+
+// WithDataRoot sets the Docksmith data directory (default: ~/.docksmith). Used for cache storage and layer tar size on cache hits.
+func WithDataRoot(root string) Option {
+	return func(b *Builder) {
+		if strings.TrimSpace(root) != "" {
+			b.docksmithRoot = root
+		}
+	}
+}
+
+// WithCache sets the layer cache implementation (defaults to ~/.docksmith/cache).
+func WithCache(c internal.Cache) Option {
+	return func(b *Builder) {
+		b.cache = c
+	}
 }
 
 // New returns a Builder that uses the given layer implementation.
-func New(l internal.Layer) *Builder {
-	return &Builder{layer: l}
+func New(l internal.Layer, opts ...Option) *Builder {
+	b := &Builder{layer: l}
+	for _, o := range opts {
+		o(b)
+	}
+	if b.docksmithRoot == "" {
+		b.docksmithRoot = defaultDocksmithRoot()
+	}
+	if b.cache == nil {
+		b.cache = cache.New(b.docksmithRoot)
+	}
+	return b
+}
+
+func defaultDocksmithRoot() string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		h = "."
+	}
+	return filepath.Join(h, ".docksmith")
+}
+
+func layerTarSize(docksmithRoot, digest string) (int64, error) {
+	hex := strings.TrimPrefix(strings.TrimSpace(digest), "sha256:")
+	if len(hex) != 64 {
+		return 0, fmt.Errorf("invalid digest")
+	}
+	p := filepath.Join(docksmithRoot, "layers", fmt.Sprintf("sha256_%s.tar", hex))
+	st, err := os.Stat(p)
+	if err != nil {
+		return 0, err
+	}
+	return st.Size(), nil
 }
 
 // Build executes instructions; only COPY and RUN create layers. FROM resets the layer stack.
 func (b *Builder) Build(instructions []internal.Instruction, tag string, context string, noCache bool) (internal.Image, error) {
-	_ = noCache
 	if len(instructions) == 0 {
 		return internal.Image{}, errors.New("no instructions provided")
 	}
@@ -48,6 +101,7 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 	wd := "/"
 	env := map[string]string{}
 	var cmd []string
+	var cascade bool
 
 	for _, inst := range instructions {
 		op := strings.ToUpper(strings.TrimSpace(inst.Op))
@@ -55,6 +109,7 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 		case "FROM":
 			curDigest = ""
 			wd = "/"
+			cascade = false
 		case "WORKDIR":
 			if len(inst.Args) != 1 {
 				return internal.Image{}, fmt.Errorf("WORKDIR requires one argument")
@@ -79,16 +134,48 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 			if op == "COPY" {
 				runInst = rewriteCopyInstruction(wd, inst)
 			}
-			d, sz, err := b.layer.CreateLayer(curDigest, runInst, ctxAbs)
+			key, err := cache.KeyHash(curDigest, inst.Raw, wd, env, op, inst.Args, ctxAbs)
 			if err != nil {
-				return internal.Image{}, err
+				return internal.Image{}, fmt.Errorf("build: cache key: %w", err)
 			}
+
+			var digest string
+			var sz int64
+
+			if noCache {
+				digest, sz, err = b.layer.CreateLayer(curDigest, runInst, ctxAbs)
+				if err != nil {
+					return internal.Image{}, err
+				}
+			} else {
+				hit := false
+				if !cascade {
+					if d, ok := b.cache.Check(key); ok {
+						if stSize, err := layerTarSize(b.docksmithRoot, d); err == nil {
+							digest = d
+							sz = stSize
+							hit = true
+						}
+					}
+				}
+				if !hit {
+					cascade = true
+					digest, sz, err = b.layer.CreateLayer(curDigest, runInst, ctxAbs)
+					if err != nil {
+						return internal.Image{}, err
+					}
+					if err := b.cache.Store(key, digest); err != nil {
+						return internal.Image{}, fmt.Errorf("build: cache store: %w", err)
+					}
+				}
+			}
+
 			layers = append(layers, internal.ImageLayer{
-				Digest:    d,
+				Digest:    digest,
 				Size:      sz,
 				CreatedBy: inst.String(),
 			})
-			curDigest = d
+			curDigest = digest
 		default:
 			return internal.Image{}, fmt.Errorf("build: unsupported instruction %q", op)
 		}
@@ -97,7 +184,6 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 	img := internal.Image{
 		Name:      name,
 		Tag:       imgTag,
-		// Deterministic builds: do not inject wall-clock time into the manifest digest.
 		CreatedAt: time.Time{},
 		Config: internal.ImageConfig{
 			Cmd:        cmd,

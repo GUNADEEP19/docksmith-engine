@@ -29,7 +29,7 @@ RUN echo hi
 
 	p := parser.New()
 	lyr := layer.New(layer.WithDataRoot(root))
-	b := New(lyr)
+	b := New(lyr, WithDataRoot(root))
 	inst, err := p.Parse(filepath.Join(ctx, "Docksmithfile"))
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +52,50 @@ RUN echo hi
 	}
 }
 
+func TestBuildCopyCacheInvalidatesWhenSourceChanges(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".docksmith")
+
+	ctx := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ctx, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	df := `FROM scratch
+COPY a.txt /app/
+RUN echo hi
+`
+	if err := os.WriteFile(filepath.Join(ctx, "Docksmithfile"), []byte(df), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := parser.New()
+	lyr := layer.New(layer.WithDataRoot(root))
+	b := New(lyr, WithDataRoot(root))
+	inst, err := p.Parse(filepath.Join(ctx, "Docksmithfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	img1, err := b.Build(inst, "t:1", ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(img1.Layers) != 2 {
+		t.Fatalf("want 2 layers, got %d", len(img1.Layers))
+	}
+
+	if err := os.WriteFile(filepath.Join(ctx, "a.txt"), []byte("b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	img2, err := b.Build(inst, "t:1", ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img2.Layers[0].Digest == img1.Layers[0].Digest {
+		t.Fatal("expected COPY layer digest to change when source file changes")
+	}
+}
+
 func TestBuildSaveLoadRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -66,7 +110,7 @@ func TestBuildSaveLoadRoundTrip(t *testing.T) {
 	}
 
 	lyr := layer.New(layer.WithDataRoot(root))
-	b := New(lyr)
+	b := New(lyr, WithDataRoot(root))
 	st := image.NewStore(image.WithDataRoot(root))
 	inst, err := parser.New().Parse(filepath.Join(ctx, "Docksmithfile"))
 	if err != nil {
