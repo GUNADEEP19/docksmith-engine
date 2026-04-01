@@ -21,6 +21,10 @@ type Builder struct {
 	docksmithRoot string
 }
 
+// ProgressFunc is an optional callback invoked after each instruction is executed.
+// It is used by the CLI to print step output with real cache HIT/MISS.
+type ProgressFunc func(step internal.BuildStep)
+
 // Option configures Builder construction.
 type Option func(*Builder)
 
@@ -78,6 +82,11 @@ func layerTarSize(docksmithRoot, digest string) (int64, error) {
 
 // Build executes instructions; only COPY and RUN create layers. FROM resets the layer stack.
 func (b *Builder) Build(instructions []internal.Instruction, tag string, context string, noCache bool) (internal.Image, error) {
+	return b.BuildWithProgress(instructions, tag, context, noCache, nil)
+}
+
+// BuildWithProgress is like Build, but emits per-step progress via onStep.
+func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag string, context string, noCache bool, onStep ProgressFunc) (internal.Image, error) {
 	if len(instructions) == 0 {
 		return internal.Image{}, errors.New("no instructions provided")
 	}
@@ -103,7 +112,10 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 	var cmd []string
 	var cascade bool
 
-	for _, inst := range instructions {
+	total := len(instructions)
+	for idx, inst := range instructions {
+		stepStart := time.Now()
+		cacheStatus := ""
 		op := strings.ToUpper(strings.TrimSpace(inst.Op))
 		switch op {
 		case "FROM":
@@ -130,11 +142,23 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 			}
 			cmd = append([]string(nil), inst.Args...)
 		case "COPY", "RUN":
+			cacheStatus = "CACHE MISS"
 			runInst := inst
 			if op == "COPY" {
 				runInst = rewriteCopyInstruction(wd, inst)
 			}
-			key, err := cache.KeyHash(curDigest, inst.Raw, wd, env, op, inst.Args, ctxAbs)
+			keyWorkdir := wd
+			keyEnv := env
+			keyArgs := inst.Args
+			if op == "COPY" {
+				// COPY cache should not be invalidated by ENV/WORKDIR changes unless they
+				// change the effective destination. We therefore key COPY on rewritten args
+				// and omit ENV/WORKDIR from the key material.
+				keyWorkdir = ""
+				keyEnv = nil
+				keyArgs = runInst.Args
+			}
+			key, err := cache.KeyHash(curDigest, inst.Raw, keyWorkdir, keyEnv, op, keyArgs, ctxAbs)
 			if err != nil {
 				return internal.Image{}, fmt.Errorf("build: cache key: %w", err)
 			}
@@ -167,6 +191,8 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 					if err := b.cache.Store(key, digest); err != nil {
 						return internal.Image{}, fmt.Errorf("build: cache store: %w", err)
 					}
+				} else {
+					cacheStatus = "CACHE HIT"
 				}
 			}
 
@@ -178,6 +204,16 @@ func (b *Builder) Build(instructions []internal.Instruction, tag string, context
 			curDigest = digest
 		default:
 			return internal.Image{}, fmt.Errorf("build: unsupported instruction %q", op)
+		}
+
+		if onStep != nil {
+			onStep(internal.BuildStep{
+				Index:           idx + 1,
+				Total:           total,
+				Instruction:     inst.String(),
+				CacheStatus:     cacheStatus,
+				DurationSeconds: time.Since(stepStart).Seconds(),
+			})
 		}
 	}
 

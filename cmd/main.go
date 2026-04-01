@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"docksmith-engine/internal/builder"
+	"docksmith-engine/internal/cache"
 	"docksmith-engine/internal/image"
 	"docksmith-engine/internal/layer"
 	"docksmith-engine/internal/parser"
@@ -43,7 +44,7 @@ func main() {
 	setModules(modules{
 		Parser:  parser.New(),
 		Builder: builder.New(lyr),
-		Cache:   &mockCache{},
+		Cache:   cache.New(""),
 		Layer:   lyr,
 		Image:   image.NewStore(),
 		Runtime: &mockRuntime{},

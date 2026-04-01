@@ -61,6 +61,16 @@ type Builder interface {
 	Build(instructions []Instruction, tag string, context string, noCache bool) (Image, error)
 }
 
+// BuildStep is emitted by builders that support progress callbacks.
+// CacheStatus is only set for COPY/RUN; otherwise it is empty.
+type BuildStep struct {
+	Index           int
+	Total           int
+	Instruction     string
+	CacheStatus     string
+	DurationSeconds float64
+}
+
 // Cache handles layer cache lookups and persistence.
 type Cache interface {
 	Check(key string) (layerDigest string, hit bool)

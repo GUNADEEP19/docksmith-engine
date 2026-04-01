@@ -343,6 +343,10 @@ func shouldIgnoreName(name string) bool {
 	if name == ".docksmith" {
 		return true
 	}
+	// The build definition should not be copied into image layers.
+	if name == "Docksmithfile" {
+		return true
+	}
 	if name == ".DS_Store" || name == "Thumbs.db" || name == "__MACOSX" {
 		return true
 	}
