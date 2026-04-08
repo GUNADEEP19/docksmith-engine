@@ -1,184 +1,205 @@
 # Docksmith Engine
 
-A simplified Docker-like build and runtime system implemented in Go.
+A simplified Docker-like image build + container runtime system implemented in Go.
 
----
+Docksmith parses a `Docksmithfile`, builds layered images with a deterministic cache, and runs containers using `chroot`-based isolation.
 
 ## ✅ Project Status — COMPLETE
 
-All modules are fully implemented and verified:
-
-| Module        | Owner    | Status                    |
-|---------------|----------|---------------------------|
-| CLI           | Gunadeep | ✅ DONE                    |
-| Parser        | Deepak   | ✅ DONE                    |
-| Layer + Image | Chinmay  | ✅ DONE                    |
-| Cache         | Vishnu   | ✅ DONE                    |
-| Runtime       | All      | ✅ DONE (Linux/WSL2 only) |
-
----
+| Module        | Owner     | Status |
+|---------------|-----------|--------|
+| CLI           | Gunadeep  | ✅ DONE |
+| Parser        | Deepak    | ✅ DONE |
+| Layer + Image | Chinmay   | ✅ DONE |
+| Cache         | Vishnu    | ✅ DONE |
+| Runtime       | All       | ✅ DONE (Linux / WSL2 only) |
 
 ## 🏗️ Architecture
 
-```
+```text
 CLI → Parser → Builder → (Cache + Layer + Image)
-                              ↓
-                           Runtime
+                           ↓
+                        Runtime
 ```
-
----
-
-## 🚀 Features Implemented
-
-### 🔹 CLI
-- `build`, `run`, `images`, `rmi`
-- Argument parsing and validation
-- Strict logging format
-
-### 🔹 Parser
-- Supports: `FROM`, `COPY`, `RUN`, `WORKDIR`, `ENV`, `CMD`
-- Preserves raw instruction string (for cache correctness) and instruction order
-- Provides clear error messages with line numbers
-
-### 🔹 Layer System
-- Only `COPY` and `RUN` create layers
-- Stored in `~/.docksmith/layers/`
-- Deterministic: sorted files, zero timestamps
-- Immutable, content-addressed (SHA-256)
-
-### 🔹 Image System
-- Stored in `~/.docksmith/images/`
-- Includes: name, tag, digest, created (ISO-8601, stable), config (Env, Cmd, WorkingDir), ordered layers
-
-### 🔹 Cache System
-- Stored in `~/.docksmith/cache/`
-- Cache key includes: previous layer digest, raw instruction, WORKDIR, ENV (sorted), COPY file hashes
-- First build → CACHE MISS
-- Rebuild → CACHE HIT
-- Changes → cascade MISS
-- `--no-cache` supported
-
-### 🔹 Runtime (Linux / WSL2 Only)
-- Extracts layers into temp rootfs
-- Uses `chroot()` for isolation
-- Applies working directory and environment variables
-- Executes command inside container
-- Cleans up after execution
-
----
 
 ## ⚠️ Important Requirements
 
-- **Run Environment:** Must use Linux or WSL2 (Ubuntu). Do not use Docker, Windows CMD, or PowerShell.
-- **Use `sudo` for runtime:** `chroot` requires elevated privileges.
+### ✅ Must use
 
----
+- Linux **or** WSL2 (Ubuntu recommended)
 
-## 🚀 How to Run
+### ❌ Do not use
 
-### 1. Build Image
+- Windows CMD / PowerShell
+- Docker (not required)
+
+### Why?
+
+The runtime uses Linux `chroot(2)` for isolation, which only works on Linux/WSL2.
+
+## ✅ Prerequisites
+
+- Go **1.22+** installed (verify with `go version`)
+- Git installed (to clone the repo)
+- Linux machine **or** WSL2 with an Ubuntu distro
+- `sudo` access (required to run containers via `chroot`)
+
+## 🚀 How to Run (Linux / WSL2)
+
+### One rule (avoid “image not found”)
+
+Always use the **same user** for both build and run.
+
+- Recommended: use `sudo` for **both** build and run
+- Reason: build artifacts are stored under `~/.docksmith/` for the running user
+  - build without sudo → `~/.docksmith`
+  - run with sudo → `/root/.docksmith`
+
+### 1) Build Image (first build = cache miss)
 
 ```bash
-go run ./cmd build -t test:latest .
+sudo go run ./cmd build -t test:latest .
 ```
 
-### 2. Run Container
+Expected behavior (first build):
+
+- `COPY` → `CACHE MISS`
+- `RUN` → `CACHE MISS`
+
+### 2) Build Again (cache hit check)
+
+```bash
+sudo go run ./cmd build -t test:latest .
+```
+
+Expected behavior:
+
+- `COPY` → `CACHE HIT`
+- `RUN` → `CACHE HIT`
+
+### 3) Run Container
 
 ```bash
 sudo go run ./cmd run test:latest
 ```
 
-### 3. List Images
+Expected:
+
+- Program output printed
+- Exit code shown
+
+### 4) List Images
 
 ```bash
 go run ./cmd images
 ```
 
-### 4. Remove Image
+### 5) Remove Image
 
 ```bash
 go run ./cmd rmi test:latest
 ```
 
----
+## 🧪 Important Tests
 
-## 🧪 Example Build Output
+### ✅ Cache Invalidation (Cascade Miss)
 
-```
-Step 1/6 : FROM base
-Step 2/6 : WORKDIR /app
-Step 3/6 : COPY . /app [CACHE HIT/MISS]
-Step 4/6 : ENV KEY=value
-Step 5/6 : RUN echo hello [CACHE HIT/MISS]
-Step 6/6 : CMD ["echo","hi"]
-Successfully built sha256:xxx test:latest
+Change something in the build context:
+
+```bash
+echo "change" >> file.txt
+sudo go run ./cmd build -t test:latest .
 ```
 
----
+Expected:
 
-## 🧪 Validation Summary
+- `COPY` → `MISS`
+- `RUN` → `MISS` (cascade)
 
-- **Build System:** Deterministic builds, correct layer creation
-- **Cache:** HIT/MISS logic verified, cascade rule working
-- **Runtime:** Executes commands correctly, uses isolated filesystem
-- **Isolation (Critical Test):**
-  - Test: `CMD ["sh","-c","echo hacked > /test.txt"]`
-  - Result: `ls /test.txt` → No such file
-  - ✔ No host filesystem access
+### 🚨 Isolation Test (Most Important)
 
----
+1) Modify `Docksmithfile`:
+
+```text
+CMD ["sh","-c","echo hacked > /test.txt"]
+```
+
+2) Build + Run:
+
+```bash
+sudo go run ./cmd build -t test:latest .
+sudo go run ./cmd run test:latest
+```
+
+3) Check the host machine:
+
+```bash
+ls /test.txt
+```
+
+✅ Expected:
+
+`ls: cannot access '/test.txt': No such file or directory`
+
+This confirms the container cannot write to the host filesystem.
+
+## 🧠 Features
+
+### CLI
+
+- Commands: `build`, `run`, `images`, `rmi`
+
+### Parser
+
+- Supports: `FROM`, `COPY`, `RUN`, `WORKDIR`, `ENV`, `CMD`
+- Preserves the raw instruction line for correct cache keys
+
+### Layer System
+
+- Only `COPY` and `RUN` create layers
+- Layers stored in `~/.docksmith/layers/`
+- Deterministic output (sorted entries, zero timestamps)
+
+### Image System
+
+- Images stored in `~/.docksmith/images/`
+- Manifest includes config + ordered layer digests + metadata
+
+### Cache System
+
+- Cache stored in `~/.docksmith/cache/`
+- Deterministic cache key includes:
+  - previous layer digest
+  - raw instruction string
+  - `WORKDIR`
+  - `ENV` (sorted)
+  - `COPY` file hashes
+- Supports `--no-cache`
+
+### Runtime (Linux / WSL2)
+
+- Extracts layers into a temporary rootfs
+- Uses `chroot()` for isolation
+- Applies `ENV` + `WORKDIR`
+- Executes the configured command safely
 
 ## ⚠️ Strict Rules Followed
 
 - Only `COPY` & `RUN` create layers
 - Deterministic builds (same input → same digest)
-- Cache uses full key (no shortcuts)
-- No network usage
-- Runtime fully isolated
+- Full cache key (no shortcuts)
+- No network usage during build
+- Runtime isolation enforced via `chroot`
 
----
+## 🎬 Demo Flow (Evaluator Friendly)
 
-## ❌ Common Mistakes Avoided
-
-- Running commands on host
-- Creating layers for ENV/WORKDIR
-- Non-deterministic builds
-- Incorrect cache reuse
-- Isolation leaks
-
----
-
-## 🎯 Final Outcome
-
-This project successfully implements:
-
-- Image builder
-- Layered filesystem
-- Deterministic cache system
-- Isolated container runtime
-
-👉 A working **mini Docker-like engine**
-
----
-
-## 🏁 Demo Steps
-
-1. Build (cold) → CACHE MISS
-2. Build again → CACHE HIT
-3. Run container → shows output
-4. Isolation test → no host file creation
-5. List images
-6. Remove image
-
----
-
-## 📌 Notes
-
-- Always use the same user (`sudo` consistently) for build + run
-- Runtime only works on Linux/WSL2 due to `chroot`
-
----
+1. Build → `CACHE MISS`
+2. Build again → `CACHE HIT`
+3. Run → output shown
+4. Isolation test → proves no `/test.txt` on host
+5. `images` → lists images
+6. `rmi` → removes image
 
 ## 🎓 Conclusion
 
-Docksmith Engine is a fully functional, deterministic, and isolated container system built from scratch in Go.
+Docksmith Engine is a fully functional, deterministic, and isolated mini container engine built from scratch in Go.
