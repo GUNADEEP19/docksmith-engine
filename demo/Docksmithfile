@@ -1,0 +1,6 @@
+FROM base
+WORKDIR /app
+COPY . /app
+ENV APP_ENV=production
+RUN echo hello
+CMD ["/app/app"]
