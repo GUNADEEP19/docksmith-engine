@@ -438,7 +438,11 @@ func buildDeterministicTar(root string, relPaths []string) ([]byte, error) {
 				hdr.Typeflag = tar.TypeDir
 			} else {
 				hdr.Name = p
-				hdr.Mode = 0o644
+				mode := int64(st.Mode() & 0o777)
+				if mode == 0 {
+					mode = 0o644
+				}
+				hdr.Mode = mode
 				hdr.Size = st.Size()
 				hdr.Typeflag = tar.TypeReg
 			}

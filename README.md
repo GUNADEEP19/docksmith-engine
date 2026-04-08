@@ -1,139 +1,110 @@
 # Docksmith Engine
 
-A simplified Docker-like build and runtime system.
+A simplified Docker-like build and runtime system implemented in Go.
 
 ---
 
-## ✅ Current Status (Gunadeep + Deepak + Chinmay + Vishnu)
+## ✅ Project Status — COMPLETE
 
-### 🔵 CLI Orchestrator — DONE (Gunadeep)
+All modules are fully implemented and verified:
 
-* Commands: `build`, `run`, `images`, `rmi`
-* Argument parsing and validation
-* Clean orchestration (no business logic)
-* Strict logging (spec-compliant)
-
----
-
-### 🟢 Parser — DONE (Deepak)
-
-* Parses Docksmithfile into structured instructions
-* Supports:
-
-	* FROM, COPY, RUN, WORKDIR, ENV, CMD
-* Strict validation with line numbers
-* Preserves:
-
-	* Raw instruction string (CRITICAL for cache)
-	* Instruction order
-* Handles whitespace and case normalization
+| Module        | Owner    | Status                    |
+|---------------|----------|---------------------------|
+| CLI           | Gunadeep | ✅ DONE                    |
+| Parser        | Deepak   | ✅ DONE                    |
+| Layer + Image | Chinmay  | ✅ DONE                    |
+| Cache         | Vishnu   | ✅ DONE                    |
+| Runtime       | All      | ✅ DONE (Linux/WSL2 only) |
 
 ---
 
-### 🟡 Layer + Image System — DONE (Chinmay)
+## 🏗️ Architecture
 
-#### Layer System:
-
-* ONLY COPY and RUN create layers
-* Stored in:
-	~/.docksmith/layers/
-* Deterministic:
-
-	* Sorted file order
-	* Zero timestamps
-* SHA-256 content-addressed
-* Immutable layers
-
-#### Image Manifest:
-
-* Stored in:
-	~/.docksmith/images/
-* Includes:
-
-	* name, tag, digest
-	* created timestamp (ISO-8601, stable)
-	* config (Env, Cmd, WorkingDir)
-	* ordered layer list
-
-#### Verified:
-
-* Same build → SAME digest
-* File change → new digest (stable)
-* Correct layer count (COPY + RUN only)
-
----
-
-### 🔴 Cache System — DONE (Vishnu)
-
-#### Cache Key:
-
-Includes:
-
-* previous layer digest
-* raw instruction string
-* WORKDIR
-* ENV (sorted)
-* COPY source file hashes
-
-#### Behavior:
-
-* First build → CACHE MISS
-* Rebuild → CACHE HIT
-* Change → cascade MISS
-* ENV/WORKDIR changes invalidate downstream
-* `--no-cache` forces MISS
-
-#### Storage:
-
-~/.docksmith/cache/
-
-* key → layer digest mapping
-
-#### Verified:
-
-* Deterministic cache behavior
-* Correct cascade rule
-* Raw instruction sensitivity
-* Proper invalidation
-
----
-
-## 🧩 Work Allocation (Final Stage)
-
-| Member   | Module           | Status  |
-| -------- | ---------------- | ------- |
-| Gunadeep | CLI Orchestrator | ✅ DONE  |
-| Deepak   | Parser           | ✅ DONE  |
-| Chinmay  | Layer + Image    | ✅ DONE  |
-| Vishnu   | Cache            | ✅ DONE  |
-| ALL      | Runtime          | ✅ DONE (Linux/WSL2) |
-
----
-
-## 🏗️ Architecture Flow
-
-```id="flow02"
+```
 CLI → Parser → Builder → (Cache + Layer + Image)
-										 ↓
-									Runtime
+                              ↓
+                           Runtime
 ```
 
 ---
 
-## 🚀 Current Working Commands
+## 🚀 Features Implemented
 
-```bash id="cmds01"
+### 🔹 CLI
+- `build`, `run`, `images`, `rmi`
+- Argument parsing and validation
+- Strict logging format
+
+### 🔹 Parser
+- Supports: `FROM`, `COPY`, `RUN`, `WORKDIR`, `ENV`, `CMD`
+- Preserves raw instruction string (for cache correctness) and instruction order
+- Provides clear error messages with line numbers
+
+### 🔹 Layer System
+- Only `COPY` and `RUN` create layers
+- Stored in `~/.docksmith/layers/`
+- Deterministic: sorted files, zero timestamps
+- Immutable, content-addressed (SHA-256)
+
+### 🔹 Image System
+- Stored in `~/.docksmith/images/`
+- Includes: name, tag, digest, created (ISO-8601, stable), config (Env, Cmd, WorkingDir), ordered layers
+
+### 🔹 Cache System
+- Stored in `~/.docksmith/cache/`
+- Cache key includes: previous layer digest, raw instruction, WORKDIR, ENV (sorted), COPY file hashes
+- First build → CACHE MISS
+- Rebuild → CACHE HIT
+- Changes → cascade MISS
+- `--no-cache` supported
+
+### 🔹 Runtime (Linux / WSL2 Only)
+- Extracts layers into temp rootfs
+- Uses `chroot()` for isolation
+- Applies working directory and environment variables
+- Executes command inside container
+- Cleans up after execution
+
+---
+
+## ⚠️ Important Requirements
+
+- **Run Environment:** Must use Linux or WSL2 (Ubuntu). Do not use Docker, Windows CMD, or PowerShell.
+- **Use `sudo` for runtime:** `chroot` requires elevated privileges.
+
+---
+
+## 🚀 How to Run
+
+### 1. Build Image
+
+```bash
 go run ./cmd build -t test:latest .
+```
+
+### 2. Run Container
+
+```bash
+sudo go run ./cmd run test:latest
+```
+
+### 3. List Images
+
+```bash
 go run ./cmd images
-sudo go run ./cmd run test:latest   # Linux/WSL2 only (chroot isolation)
+```
+
+### 4. Remove Image
+
+```bash
 go run ./cmd rmi test:latest
 ```
 
 ---
 
-## 🧪 Expected Build Output
+## 🧪 Example Build Output
 
-```id="output02"
+```
 Step 1/6 : FROM base
 Step 2/6 : WORKDIR /app
 Step 3/6 : COPY . /app [CACHE HIT/MISS]
@@ -145,151 +116,69 @@ Successfully built sha256:xxx test:latest
 
 ---
 
-## ⚠️ STRICT RULES (DO NOT BREAK)
+## 🧪 Validation Summary
 
-### 1. Layer Rules
-
-* ONLY COPY and RUN create layers
-* Others update config only
-
----
-
-### 2. Determinism
-
-* Same input → same digest
-* Must:
-
-	* sort files
-	* zero timestamps
+- **Build System:** Deterministic builds, correct layer creation
+- **Cache:** HIT/MISS logic verified, cascade rule working
+- **Runtime:** Executes commands correctly, uses isolated filesystem
+- **Isolation (Critical Test):**
+  - Test: `CMD ["sh","-c","echo hacked > /test.txt"]`
+  - Result: `ls /test.txt` → No such file
+  - ✔ No host filesystem access
 
 ---
 
-### 3. Cache Rules
+## ⚠️ Strict Rules Followed
 
-* Full key match required
-* Cascade rule must hold
-* Raw instruction MUST be used
-
----
-
-### 4. Manifest Rules
-
-* `created` must:
-
-	* be ISO-8601
-	* remain unchanged across rebuilds
+- Only `COPY` & `RUN` create layers
+- Deterministic builds (same input → same digest)
+- Cache uses full key (no shortcuts)
+- No network usage
+- Runtime fully isolated
 
 ---
 
-### 5. Logging Rules
+## ❌ Common Mistakes Avoided
 
-* Cache logs ONLY for COPY and RUN
-
----
-
-### 6. NO NETWORK
-
-* No internet usage during build or run
+- Running commands on host
+- Creating layers for ENV/WORKDIR
+- Non-deterministic builds
+- Incorrect cache reuse
+- Isolation leaks
 
 ---
 
-## 🧱 Runtime — DONE (Linux/WSL2)
+## 🎯 Final Outcome
 
-### Goal:
+This project successfully implements:
 
-Run container with full filesystem isolation.
+- Image builder
+- Layered filesystem
+- Deterministic cache system
+- Isolated container runtime
 
----
-
-### Required:
-
-1. Extract layers into temp directory
-2. Set working directory
-3. Apply environment variables
-4. Execute command inside isolated root
-5. Clean up after execution
+👉 A working **mini Docker-like engine**
 
 ---
 
-### CRITICAL REQUIREMENT:
+## 🏁 Demo Steps
 
-👉 Container MUST NOT access host filesystem
-
----
-
-### Must Use:
-
-* chroot() OR Linux namespaces
-
----
-
-## 🧪 Runtime Verification (IMPORTANT)
-
-### Test 1 — Basic run
-
-* command executes correctly
+1. Build (cold) → CACHE MISS
+2. Build again → CACHE HIT
+3. Run container → shows output
+4. Isolation test → no host file creation
+5. List images
+6. Remove image
 
 ---
 
-### Test 2 — Isolation (PASS/FAIL)
+## 📌 Notes
 
-Inside container:
-
-```
-echo "hello" > /test.txt
-```
-
-After run:
-
-* file MUST NOT exist on host
+- Always use the same user (`sudo` consistently) for build + run
+- Runtime only works on Linux/WSL2 due to `chroot`
 
 ---
 
-### Test 3 — ENV override
+## 🎓 Conclusion
 
-* -e KEY=value must override
-
----
-
-### Test 4 — Working directory
-
-* commands run in correct path
-
----
-
-## ❌ COMMON FAILURE POINTS
-
-* Not isolating filesystem
-* Running commands on host
-* Incorrect layer extraction order
-* Not cleaning temp directory
-* Weak ENV handling
-
----
-
-## 🧠 Final Goal
-
-You are building:
-
-* Deterministic image builder
-* Correct cache system
-* Isolated container runtime
-
----
-
-## 📌 Current Status
-
-👉 Build system is COMPLETE
-👉 Runtime is FINAL step
-
----
-
-## ⚠️ Final Warning
-
-If runtime is wrong:
-
-* demo = FAIL immediately
-
-Isolation is a **pass/fail requirement**
-
-Implement carefully.
+Docksmith Engine is a fully functional, deterministic, and isolated container system built from scratch in Go.

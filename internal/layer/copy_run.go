@@ -175,12 +175,20 @@ func copyDirTree(src, dst string) error {
 }
 
 func copyFile(src, dst string) error {
+	st, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	mode := st.Mode() & os.ModePerm
+	if mode == 0 {
+		mode = 0o644
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
