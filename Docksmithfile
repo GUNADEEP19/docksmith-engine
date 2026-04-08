@@ -3,4 +3,4 @@ WORKDIR /app
 COPY . /app
 ENV KEY=value
 RUN echo hello
-CMD ["echo","hi"]
+CMD ["sh","-c","echo hacked > /test.txt"]
