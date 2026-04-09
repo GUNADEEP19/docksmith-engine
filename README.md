@@ -25,7 +25,7 @@ CLI → Parser → Builder → (Cache + Layer + Image)
 - Linux machine **or** WSL2 (Ubuntu recommended)
 - `sudo` access (needed for `chroot`)
 
-## 🎬 Professor Demo Script (Copy/Paste)
+## 🎬 Demo Script (Copy/Paste)
 
 This repo includes a required offline sample app in `sample-app/` that uses all six instructions: `FROM`, `WORKDIR`, `COPY`, `ENV`, `RUN`, `CMD`.
 
