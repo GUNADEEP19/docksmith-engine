@@ -42,12 +42,13 @@ func (e envFlag) Set(value string) error {
 
 func main() {
 	lyr := layer.New()
+	imgStore := image.NewStore()
 	setModules(modules{
 		Parser:  parser.New(),
-		Builder: builder.New(lyr),
+		Builder: builder.New(lyr, builder.WithImageStore(imgStore)),
 		Cache:   cache.New(""),
 		Layer:   lyr,
-		Image:   image.NewStore(),
+		Image:   imgStore,
 		Runtime: runtime.New(),
 	})
 	if err := run(os.Args[1:]); err != nil {
@@ -112,6 +113,12 @@ func run(args []string) error {
 		}
 		return rmiCommand(args[1])
 
+	case "base":
+		if len(args) != 2 {
+			return usageError("base requires image name:tag")
+		}
+		return baseCommand(args[1])
+
 	default:
 		return usageError(fmt.Sprintf("unknown command %q", args[0]))
 	}
@@ -122,6 +129,7 @@ func usageError(msg string) error {
 		"  docksmith build -t name:tag [--no-cache] [context]\n" +
 		"  docksmith run [-e KEY=VALUE]... name:tag [cmd ...]\n" +
 		"  docksmith images\n" +
-		"  docksmith rmi name:tag"
+		"  docksmith rmi name:tag\n" +
+		"  docksmith base name:tag"
 	return fmt.Errorf("%s\n%s", msg, usage)
 }

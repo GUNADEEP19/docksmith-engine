@@ -79,7 +79,7 @@ type Cache interface {
 
 // Layer creates image layers and their digests.
 type Layer interface {
-	CreateLayer(prevLayer string, instruction Instruction, context string) (digest string, size int64, err error)
+	CreateLayer(prevLayer string, instruction Instruction, context string, workdir string, env map[string]string) (digest string, size int64, err error)
 }
 
 // ImageStore persists and retrieves image metadata.

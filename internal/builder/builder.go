@@ -18,6 +18,7 @@ import (
 type Builder struct {
 	layer         internal.Layer
 	cache         internal.Cache
+	images        internal.ImageStore
 	docksmithRoot string
 }
 
@@ -41,6 +42,14 @@ func WithDataRoot(root string) Option {
 func WithCache(c internal.Cache) Option {
 	return func(b *Builder) {
 		b.cache = c
+	}
+}
+
+// WithImageStore enables support for FROM <name:tag> base images that are already present locally.
+// If unset, only FROM scratch is supported.
+func WithImageStore(s internal.ImageStore) Option {
+	return func(b *Builder) {
+		b.images = s
 	}
 }
 
@@ -108,9 +117,12 @@ func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag str
 	var curDigest string
 	var layers []internal.ImageLayer
 	wd := "/"
+	wdSet := false
 	env := map[string]string{}
 	var cmd []string
 	var cascade bool
+	baseManifestDigest := ""
+	hasLayerSinceFrom := false
 
 	total := len(instructions)
 	for idx, inst := range instructions {
@@ -119,14 +131,51 @@ func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag str
 		op := strings.ToUpper(strings.TrimSpace(inst.Op))
 		switch op {
 		case "FROM":
+			if len(inst.Args) != 1 {
+				return internal.Image{}, fmt.Errorf("FROM requires exactly one argument")
+			}
+			from := strings.TrimSpace(inst.Args[0])
+			layers = nil
 			curDigest = ""
+			baseManifestDigest = ""
 			wd = "/"
+			wdSet = false
+			env = map[string]string{}
+			cmd = nil
 			cascade = false
+			hasLayerSinceFrom = false
+
+			if strings.EqualFold(from, "scratch") {
+				break
+			}
+			if b.images == nil {
+				return internal.Image{}, fmt.Errorf("build: FROM %q requires a configured image store", from)
+			}
+			base, err := b.images.Load(from)
+			if err != nil {
+				return internal.Image{}, fmt.Errorf("build: FROM %q: %w", from, err)
+			}
+			layers = append([]internal.ImageLayer(nil), base.Layers...)
+			if len(base.Layers) > 0 {
+				curDigest = base.Layers[len(base.Layers)-1].Digest
+			}
+			baseManifestDigest = base.Digest
+			if strings.TrimSpace(base.Config.WorkingDir) != "" {
+				wd = base.Config.WorkingDir
+				wdSet = true
+			}
+			for k, v := range base.Config.Env {
+				env[k] = v
+			}
+			if len(base.Config.Cmd) > 0 {
+				cmd = append([]string(nil), base.Config.Cmd...)
+			}
 		case "WORKDIR":
 			if len(inst.Args) != 1 {
 				return internal.Image{}, fmt.Errorf("WORKDIR requires one argument")
 			}
 			wd = resolveContainerPath(wd, inst.Args[0])
+			wdSet = true
 		case "ENV":
 			if len(inst.Args) != 1 {
 				return internal.Image{}, fmt.Errorf("ENV requires KEY=value")
@@ -147,18 +196,19 @@ func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag str
 			if op == "COPY" {
 				runInst = rewriteCopyInstruction(wd, inst)
 			}
-			keyWorkdir := wd
-			keyEnv := env
-			keyArgs := inst.Args
-			if op == "COPY" {
-				// COPY cache should not be invalidated by ENV/WORKDIR changes unless they
-				// change the effective destination. We therefore key COPY on rewritten args
-				// and omit ENV/WORKDIR from the key material.
-				keyWorkdir = ""
-				keyEnv = nil
-				keyArgs = runInst.Args
+			keyWorkdir := ""
+			if wdSet {
+				keyWorkdir = wd
 			}
-			key, err := cache.KeyHash(curDigest, inst.Raw, keyWorkdir, keyEnv, op, keyArgs, ctxAbs)
+			prevForKey := curDigest
+			if !hasLayerSinceFrom {
+				prevForKey = baseManifestDigest
+			}
+			copyArgs := []string(nil)
+			if op == "COPY" {
+				copyArgs = inst.Args
+			}
+			key, err := cache.KeyHash(prevForKey, inst.Raw, keyWorkdir, env, op, copyArgs, ctxAbs)
 			if err != nil {
 				return internal.Image{}, fmt.Errorf("build: cache key: %w", err)
 			}
@@ -167,7 +217,7 @@ func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag str
 			var sz int64
 
 			if noCache {
-				digest, sz, err = b.layer.CreateLayer(curDigest, runInst, ctxAbs)
+				digest, sz, err = b.layer.CreateLayer(curDigest, runInst, ctxAbs, wd, env)
 				if err != nil {
 					return internal.Image{}, err
 				}
@@ -184,7 +234,7 @@ func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag str
 				}
 				if !hit {
 					cascade = true
-					digest, sz, err = b.layer.CreateLayer(curDigest, runInst, ctxAbs)
+					digest, sz, err = b.layer.CreateLayer(curDigest, runInst, ctxAbs, wd, env)
 					if err != nil {
 						return internal.Image{}, err
 					}
@@ -202,6 +252,7 @@ func (b *Builder) BuildWithProgress(instructions []internal.Instruction, tag str
 				CreatedBy: inst.String(),
 			})
 			curDigest = digest
+			hasLayerSinceFrom = true
 		default:
 			return internal.Image{}, fmt.Errorf("build: unsupported instruction %q", op)
 		}

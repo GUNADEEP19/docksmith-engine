@@ -21,7 +21,7 @@ func TestBuildLayerDigestsDeterministic(t *testing.T) {
 	}
 	df := `FROM scratch
 COPY a.txt /app/
-RUN echo hi
+COPY a.txt /app2/
 `
 	if err := os.WriteFile(filepath.Join(ctx, "Docksmithfile"), []byte(df), 0o644); err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestBuildCopyCacheInvalidatesWhenSourceChanges(t *testing.T) {
 	}
 	df := `FROM scratch
 COPY a.txt /app/
-RUN echo hi
+COPY a.txt /app2/
 `
 	if err := os.WriteFile(filepath.Join(ctx, "Docksmithfile"), []byte(df), 0o644); err != nil {
 		t.Fatal(err)
@@ -93,6 +93,9 @@ RUN echo hi
 	}
 	if img2.Layers[0].Digest == img1.Layers[0].Digest {
 		t.Fatal("expected COPY layer digest to change when source file changes")
+	}
+	if img2.Layers[1].Digest == img1.Layers[1].Digest {
+		t.Fatal("expected subsequent layer digest to change when source file changes")
 	}
 }
 

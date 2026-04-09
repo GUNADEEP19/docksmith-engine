@@ -74,10 +74,12 @@ func (m *mockCache) Store(key string, layerDigest string) error {
 	return nil
 }
 
-func (m *mockLayer) CreateLayer(prevLayer string, instruction internal.Instruction, context string) (string, int64, error) {
+func (m *mockLayer) CreateLayer(prevLayer string, instruction internal.Instruction, context string, workdir string, env map[string]string) (string, int64, error) {
 	_ = prevLayer
 	_ = instruction
 	_ = context
+	_ = workdir
+	_ = env
 	return "sha256:layer-dummy", 0, nil
 }
 

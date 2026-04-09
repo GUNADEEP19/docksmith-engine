@@ -193,6 +193,34 @@ func rmiCommand(image string) error {
 	return nil
 }
 
+func baseCommand(image string) error {
+	if strings.TrimSpace(image) == "" {
+		return errors.New("base failed: image name:tag is required")
+	}
+	if err := validateNameTag(image); err != nil {
+		return fmt.Errorf("base failed: %w", err)
+	}
+	if deps.Image == nil {
+		return errors.New("base failed: image store module is not configured")
+	}
+	parts := strings.SplitN(image, ":", 2)
+	img := internal.Image{
+		Name: strings.TrimSpace(parts[0]),
+		Tag:  strings.TrimSpace(parts[1]),
+		Config: internal.ImageConfig{
+			Cmd:        []string{},
+			Env:        map[string]string{},
+			WorkingDir: "",
+		},
+		Layers: []internal.ImageLayer{},
+	}
+	if err := deps.Image.Save(img); err != nil {
+		return fmt.Errorf("base failed: save base image: %w", err)
+	}
+	fmt.Printf("Imported base image %s\n", image)
+	return nil
+}
+
 func validateNameTag(nameTag string) error {
 	parts := strings.Split(nameTag, ":")
 	if len(parts) != 2 {

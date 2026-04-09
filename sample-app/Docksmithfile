@@ -1,6 +1,6 @@
-FROM ubuntu:20.04
+FROM base:latest
 WORKDIR /app
 COPY . /app
-ENV APP_ENV=production
-RUN echo "Building application"
-CMD ["./app"]
+ENV MESSAGE=Hello
+RUN sh -c "echo built > /app/build.txt"
+CMD ["sh","/app/app/main.sh"]

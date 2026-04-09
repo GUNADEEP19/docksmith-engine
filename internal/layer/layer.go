@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"docksmith-engine/internal"
+	"docksmith-engine/internal/isolation"
+	"docksmith-engine/internal/provision"
 )
 
 const (
@@ -58,7 +60,7 @@ func (s *Service) layersDir() string {
 }
 
 // CreateLayer builds a delta layer for COPY or RUN only.
-func (s *Service) CreateLayer(prevLayerDigest string, instruction internal.Instruction, context string) (string, int64, error) {
+func (s *Service) CreateLayer(prevLayerDigest string, instruction internal.Instruction, context string, workdir string, env map[string]string) (string, int64, error) {
 	op := strings.ToUpper(strings.TrimSpace(instruction.Op))
 	if op != "COPY" && op != "RUN" {
 		return "", 0, fmt.Errorf("layer: CreateLayer supports COPY and RUN only, got %q", instruction.Op)
@@ -107,8 +109,23 @@ func (s *Service) CreateLayer(prevLayerDigest string, instruction internal.Instr
 			return "", 0, err
 		}
 	case "RUN":
-		if err := applyRunMock(workDir, instruction.Args); err != nil {
+		if err := provision.ProvisionBaseBinaries(workDir); err != nil {
+			return "", 0, fmt.Errorf("layer: provision binaries: %w", err)
+		}
+		wd := strings.TrimSpace(workdir)
+		if wd == "" {
+			wd = "/"
+		}
+		wdAbs := filepath.Join(workDir, filepath.FromSlash(strings.TrimPrefix(filepath.Clean("/"+wd), "/")))
+		if err := os.MkdirAll(wdAbs, 0o755); err != nil {
+			return "", 0, fmt.Errorf("layer: create workdir: %w", err)
+		}
+		exitCode, err := isolation.Exec(workDir, wd, instruction.Args, env)
+		if err != nil {
 			return "", 0, err
+		}
+		if exitCode != 0 {
+			return "", 0, fmt.Errorf("layer: RUN exited with code %d", exitCode)
 		}
 	}
 

@@ -24,11 +24,11 @@ func TestCreateLayerDeterminism(t *testing.T) {
 		t.Fatal(err)
 	}
 	inst := internal.Instruction{Op: "COPY", Args: []string{"f.txt", "/app/"}, Raw: "COPY f.txt /app/"}
-	d1, sz1, err := svc.CreateLayer("", inst, ctx)
+	d1, sz1, err := svc.CreateLayer("", inst, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d2, sz2, err := svc.CreateLayer("", inst, ctx)
+	d2, sz2, err := svc.CreateLayer("", inst, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,12 +50,12 @@ func TestChangeDetectionOnlyTopLayerChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	copyA := internal.Instruction{Op: "COPY", Args: []string{"a.txt", "/app/"}}
-	dA1, _, err := svc.CreateLayer("", copyA, ctx)
+	dA1, _, err := svc.CreateLayer("", copyA, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	copyB := internal.Instruction{Op: "COPY", Args: []string{"b.txt", "/app/"}}
-	dB1, _, err := svc.CreateLayer(dA1, copyB, ctx)
+	dB1, _, err := svc.CreateLayer(dA1, copyB, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +63,11 @@ func TestChangeDetectionOnlyTopLayerChanges(t *testing.T) {
 	if err := os.WriteFile(b, []byte("b2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dA2, _, err := svc.CreateLayer("", copyA, ctx)
+	dA2, _, err := svc.CreateLayer("", copyA, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dB2, _, err := svc.CreateLayer(dA2, copyB, ctx)
+	dB2, _, err := svc.CreateLayer(dA2, copyB, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +89,11 @@ func TestExtractLayersInOrder(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ctx, "two"), []byte("2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	d1, _, err := svc.CreateLayer("", internal.Instruction{Op: "COPY", Args: []string{"one", "/x/"}}, ctx)
+	d1, _, err := svc.CreateLayer("", internal.Instruction{Op: "COPY", Args: []string{"one", "/x/"}}, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d2, _, err := svc.CreateLayer(d1, internal.Instruction{Op: "COPY", Args: []string{"two", "/x/"}}, ctx)
+	d2, _, err := svc.CreateLayer(d1, internal.Instruction{Op: "COPY", Args: []string{"two", "/x/"}}, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestTarEntriesSortedLexicographically(t *testing.T) {
 		t.Fatal(err)
 	}
 	inst := internal.Instruction{Op: "COPY", Args: []string{".", "/app/"}}
-	d1, _, err := svc.CreateLayer("", inst, ctx)
+	d1, _, err := svc.CreateLayer("", inst, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,12 +146,12 @@ func TestTarEntriesSortedLexicographically(t *testing.T) {
 		t.Fatal(err)
 	}
 	inst2 := internal.Instruction{Op: "COPY", Args: []string{"extra", "/app/"}}
-	d2a, _, err := svc.CreateLayer(d1, inst2, ctx)
+	d2a, _, err := svc.CreateLayer(d1, inst2, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	d2b, _, err := svc.CreateLayer(d1, inst2, ctx)
+	d2b, _, err := svc.CreateLayer(d1, inst2, ctx, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestCopyDotCreatesDestinationDirWhenMissing(t *testing.T) {
 
 	// Destination has no trailing slash and does not exist yet; must be treated as directory.
 	inst := internal.Instruction{Op: "COPY", Args: []string{".", "/app"}, Raw: "COPY . /app"}
-	_, _, err := svc.CreateLayer("", inst, ctx)
+	_, _, err := svc.CreateLayer("", inst, ctx, "", nil)
 	if err != nil {
 		t.Fatalf("COPY . /app should succeed, got: %v", err)
 	}
