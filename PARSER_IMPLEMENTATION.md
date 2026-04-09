@@ -148,27 +148,18 @@ go test ./internal/parser -run TestParseValidDocksmithfile -v
 
 ## Integration with CLI
 
-### Before Integration
-The CLI currently uses mock parser. To integrate the real parser:
+The CLI wires the real parser in `cmd/main.go`, so `build` reads and parses the Docksmithfile directly.
 
-```go
-// In cmd/mocks.go, replace:
-Parser: &mockParser{},
-
-// With:
-Parser: parser.New(),
-```
-
-### After Integration
+Example:
 ```bash
-go run ./cmd build -t myimage:latest sample-app
+sudo go run ./cmd build -t myimage:latest ./sample-app
 ```
 
 This will:
-1. Read `sample-app/Docksmithfile`
+1. Read `./sample-app/Docksmithfile`
 2. Parse instructions with validation
-3. Pass to Builder module
-4. Builder uses raw strings for cache keys
+3. Pass instructions to the Builder
+4. Builder uses raw strings for deterministic cache keys
 
 ## Important Notes for Integration
 

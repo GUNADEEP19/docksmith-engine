@@ -63,11 +63,17 @@ Expected behavior:
 
 ### 3) Cache invalidation + cascade (COPY MISS → RUN MISS)
 
-Change a copied file, then rebuild:
+Create/change a temporary file in the build context, then rebuild:
 
 ```bash
-echo "# demo change" >> sample-app/app/main.sh
+date > sample-app/.demo-change.txt
 sudo go run ./cmd build -t sample:latest ./sample-app
+```
+
+(Optional cleanup)
+
+```bash
+rm -f sample-app/.demo-change.txt
 ```
 
 Expected behavior:
