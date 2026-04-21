@@ -1,3 +1,4 @@
+
 #!/bin/sh
 set -eu
 
@@ -10,3 +11,4 @@ if [ -f /app/build.txt ]; then
 else
   echo "Build artifact: (missing)"
 fi
+

@@ -1,3 +1,4 @@
+
 package parser
 
 import (
@@ -67,13 +68,34 @@ func (p *Parser) Parse(filePath string) ([]internal.Instruction, error) {
 // parseInstruction parses a single instruction line.
 // rawLine is preserved verbatim in Instruction.Raw.
 func parseInstruction(rawLine string, trimmedLine string, lineNum int) (internal.Instruction, error) {
-	parts := strings.Fields(trimmedLine)
-	if len(parts) == 0 {
-		return internal.Instruction{}, fmt.Errorf("line %d: empty instruction", lineNum)
+	// Extract the operation token (first word) and the remainder of the line.
+	// We preserve the remainder verbatim for instructions that need it (CMD expects a JSON array).
+	firstSep := -1
+	for i, r := range trimmedLine {
+		if r == ' ' || r == '\t' {
+			firstSep = i
+			break
+		}
+	}
+	var op string
+	var remainder string
+	if firstSep == -1 {
+		op = strings.ToUpper(trimmedLine)
+		remainder = ""
+	} else {
+		op = strings.ToUpper(strings.TrimSpace(trimmedLine[:firstSep]))
+		remainder = strings.TrimSpace(trimmedLine[firstSep+1:])
 	}
 
-	op := strings.ToUpper(parts[0])
-	args := parts[1:]
+	// Split remainder into args for all instructions except CMD (CMD expects raw JSON).
+	var args []string
+	if op != "CMD" {
+		var err error
+		args, err = splitArgs(remainder)
+		if err != nil {
+			return internal.Instruction{}, fmt.Errorf("line %d: %w", lineNum, err)
+		}
+	}
 
 	// Validate instruction type
 	switch op {
@@ -134,13 +156,12 @@ func parseInstruction(rawLine string, trimmedLine string, lineNum int) (internal
 		}, nil
 
 	case "CMD":
-		// CMD must be a JSON array
-		if len(args) == 0 {
+		// CMD must be a JSON array; preserve the remainder verbatim and unmarshal it.
+		if strings.TrimSpace(remainder) == "" {
 			return internal.Instruction{}, fmt.Errorf("line %d: CMD must be JSON array", lineNum)
 		}
-		cmdStr := strings.Join(args, " ")
 		var cmdArray []string
-		if err := json.Unmarshal([]byte(cmdStr), &cmdArray); err != nil {
+		if err := json.Unmarshal([]byte(remainder), &cmdArray); err != nil {
 			return internal.Instruction{}, fmt.Errorf("line %d: CMD must be JSON array", lineNum)
 		}
 		if len(cmdArray) == 0 {
@@ -155,5 +176,75 @@ func parseInstruction(rawLine string, trimmedLine string, lineNum int) (internal
 	default:
 		return internal.Instruction{}, fmt.Errorf("line %d: unknown instruction %s", lineNum, op)
 	}
+}
+
+// splitArgs splits a command line into arguments respecting single and double quotes
+// and simple backslash escapes. It returns an error when a quoted string is not closed.
+func splitArgs(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+
+	for _, r := range s {
+		if escaped {
+			cur.WriteRune(r)
+			escaped = false
+			continue
+		}
+		switch r {
+		case '\\':
+			// start escape for next char
+			escaped = true
+		case '\'':
+			if inDouble {
+				cur.WriteRune(r)
+				continue
+			}
+			if inSingle {
+				inSingle = false
+				// do not append the quote
+				continue
+			}
+			inSingle = true
+		case '"':
+			if inSingle {
+				cur.WriteRune(r)
+				continue
+			}
+			if inDouble {
+				inDouble = false
+				// do not append the quote
+				continue
+			}
+			inDouble = true
+		case ' ', '\t':
+			if inSingle || inDouble {
+				cur.WriteRune(r)
+				continue
+			}
+			// separator
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if escaped {
+		// trailing backslash: treat as literal
+		cur.WriteRune('\\')
+	}
+	if inSingle || inDouble {
+		return nil, fmt.Errorf("unterminated quoted string")
+	}
+	flush()
+	return out, nil
 }
 
